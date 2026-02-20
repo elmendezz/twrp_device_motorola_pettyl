@@ -59,26 +59,29 @@ jobs:
       run: |
         cd $HOME/fox_8.1
         
-        # 1. Forzar Java 8
+        # 1. Java 8 y Entorno
         export JAVA_HOME=$JAVA_HOME_8_X64
         export PATH=$JAVA_HOME/bin:$PATH
-        
-        # 2. Configuración de entorno
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL="C"
         
-        # 3. FIX DE COMILLAS: Eliminar las comillas dobles escapadas que causan el error
-        # Buscamos en los archivos .mk y quitamos las comillas extra
-        find vendor/recovery -name "*.mk" -type f -exec sed -i 's/""/"/g' {} +
-        find device/motorola/pettyl -name "*.mk" -type f -exec sed -i 's/""/"/g' {} +
+        # 2. LIMPIEZA DE CÓDIGO FUENTE (Fix Definitivo)
+        # Este comando busca las macros problemáticas en el código y les quita las comillas dobles
+        # para que el compilador no reciba ""Texto""
+        echo "Aplicando parches al código fuente..."
+        sed -i 's/FOX_VERSION/ "R11.1" /g' bootable/recovery/twrp.cpp
+        sed -i 's/FOX_VERSION/ "R11.1" /g' bootable/recovery/variables.h
+        sed -i 's/OF_MAINTAINER/ "elmendezz" /g' bootable/recovery/twrp.cpp
 
-        # 4. Iniciar build
+        # 3. Configuración y compilación
         source build/envsetup.sh
         lunch omni_pettyl-eng
         
-        # 5. Ejecutar compilación (Limpiamos antes por si acaso quedó basura de la falla anterior)
+        # Limpiamos rastros de la falla anterior
         make clean
-        mka recoveryimage -j$(nproc --all)
+        
+        # 4. Forzar variables en el comando de compilación
+        mka recoveryimage FOX_VERSION="R11.1" OF_MAINTAINER="elmendezz" -j$(nproc --all)
 
     - name: Publicar Release
       uses: softprops/action-gh-release@v2
