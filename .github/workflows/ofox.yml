@@ -1,4 +1,4 @@
-name: Compilar OrangeFox Pettyl (Official Sync)
+name: Compilar OrangeFox Pettyl (Fix Path)
 
 on:
   workflow_dispatch:
@@ -13,9 +13,6 @@ jobs:
     steps:
     - name: Limpiar espacio en disco
       uses: jlumbroso/free-disk-space@v1.3.1
-      with:
-        tool-cache: false
-        android: false
 
     - name: Instalar Dependencias
       run: |
@@ -29,53 +26,44 @@ jobs:
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Sincronizar Fuentes con OrangeFox Sync Script
+    - name: Sincronizar Fuentes (GitHub Mirror)
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        # Clonar el script de sincronización oficial
-        git clone https://gitlab.com/OrangeFox/sync.git ~/fox_sync
-        cd ~/fox_sync
+        # CREAMOS LA CARPETA MANUALMENTE PARA EVITAR EL ERROR "No such file"
+        mkdir -p ~/fox_9.0
+        cd ~/fox_9.0
         
-        # Ejecutar el script para la rama 9.0 (compatible con Pettyl Android 9)
-        # --path es donde se descargará todo el código fuente
-        ./orangefox_sync.sh --branch 9.0 --path ~/fox_9.0
+        # Usamos el mirror de GitHub de OrangeFox para evitar el error de autenticación de GitLab
+        repo init --depth=1 -u https://github.com/OrangeFoxRecovery/Manifest.git -b fox_9.0
+        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
     - name: Clonar Device Tree (Pettyl)
       run: |
-        # Usamos la ruta generada por el script anterior
         cd ~/fox_9.0
+        # Clonamos tu repo en la ruta correcta
         git clone https://github.com/elmendezz/android_device_motorola_pettyl -b master device/motorola/pettyl
 
     - name: Compilar Recovery
       run: |
         cd ~/fox_9.0
-        # Forzamos el uso de Python 2 para builds antiguos
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # OrangeFox requiere preparar el entorno de lunch
-        lunch omni_pettyl-eng || lunch fox_pettyl-eng
+        # Intentar lunch con el prefijo fox_
+        lunch fox_pettyl-eng || lunch omni_pettyl-eng
         
-        # Compilar
         make recoveryimage -j$(nproc --all)
-
-    - name: Preparar Archivos para Release
-      id: check_files
-      run: |
-        cd ~/fox_9.0/out/target/product/pettyl
-        # OrangeFox genera un ZIP que es lo más importante
-        OUTPUT_ZIP=$(ls OrangeFox-*.zip | head -n 1)
-        echo "zip_name=$OUTPUT_ZIP" >> $GITHUB_OUTPUT
 
     - name: Publicar Release
       uses: softprops/action-gh-release@v2
+      if: success()
       with:
         tag_name: orangefox-pettyl-${{ github.run_number }}
-        name: OrangeFox Recovery Pettyl (R11.1)
+        name: OrangeFox Recovery Pettyl
         files: |
-          ~/fox_9.0/out/target/product/pettyl/*.zip
+          ~/fox_9.0/out/target/product/pettyl/OrangeFox-*.zip
           ~/fox_9.0/out/target/product/pettyl/recovery.img
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
