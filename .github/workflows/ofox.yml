@@ -58,15 +58,24 @@ jobs:
     - name: Compilar Recovery
       run: |
         cd $HOME/fox_8.1
-        # Forzamos variables de entorno críticas
-        export ALLOW_MISSING_DEPENDENCIES=true
-        export LC_ALL="C"
+        # 1. Forzar Java 8
         export JAVA_HOME=$JAVA_HOME_8_X64
         export PATH=$JAVA_HOME/bin:$PATH
         
+        # 2. Configuración de entorno
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export LC_ALL="C"
+        
+        # 3. CORRECCIÓN DE COMILLAS (El fix para tu error)
+        # Esto elimina las comillas dobles repetidas que están rompiendo el código C++
+        export FOX_VERSION="R11.1"
+        export OF_MAINTAINER="elmendezz"
+        
+        # 4. Iniciar build
         source build/envsetup.sh
         lunch omni_pettyl-eng
         
+        # 5. Ejecutar compilación
         mka recoveryimage -j$(nproc --all)
 
     - name: Publicar Release
