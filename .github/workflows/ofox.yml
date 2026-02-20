@@ -14,6 +14,12 @@ jobs:
     - name: Limpiar espacio en disco
       uses: jlumbroso/free-disk-space@v1.3.1
 
+    - name: Configurar Java 8 (Requerido para Android 8.1)
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin' # O 'zulu'
+        java-version: '8'
+
     - name: Instalar Dependencias y Configurar Python 2
       run: |
         sudo apt-get update
@@ -26,7 +32,6 @@ jobs:
 
     - name: Configurar Repo Tool
       run: |
-        # La carpeta ~/bin ya fue creada en el paso anterior y está en el PATH
         curl https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
         chmod a+x $HOME/bin/repo
 
@@ -35,12 +40,13 @@ jobs:
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        mkdir ~/OrangeFox_sync
+        mkdir -p ~/OrangeFox_sync
         cd ~/OrangeFox_sync
-        git clone https://gitlab.com/OrangeFox/sync.git
+        if [ ! -d "sync" ]; then
+          git clone https://gitlab.com/OrangeFox/sync.git
+        fi
         
-        cd sync
-        cd legacy
+        cd sync/legacy
         chmod +x orangefox_sync_legacy.sh
         ./orangefox_sync_legacy.sh --branch 8.1 --path $HOME/fox_8.1
         
@@ -52,13 +58,15 @@ jobs:
     - name: Compilar Recovery
       run: |
         cd $HOME/fox_8.1
+        # Forzamos variables de entorno críticas
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL="C"
+        export JAVA_HOME=$JAVA_HOME_8_X64
+        export PATH=$JAVA_HOME/bin:$PATH
         
         source build/envsetup.sh
         lunch omni_pettyl-eng
         
-        # $(nproc --all) garantiza el uso absoluto de todos los núcleos disponibles
         mka recoveryimage -j$(nproc --all)
 
     - name: Publicar Release
