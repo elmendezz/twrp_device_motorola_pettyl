@@ -10,7 +10,7 @@ on:
       manifest_branch:
         description: 'Rama del Manifiesto de TWRP'
         required: true
-        default: 'twrp-9.1'
+        default: 'twrp-9.0'
       device_tree_url:
         description: 'URL del Árbol del Dispositivo (Device Tree)'
         required: true
