@@ -5,8 +5,8 @@ on:
 
 jobs:
   build:
-    # VOLVEMOS A 20.04: Es el más estable para Android 8.1 y Python 2
-    runs-on: ubuntu-20.04 
+    # Actualizamos a ubuntu-22.04 ya que GitHub está retirando 20.04
+    runs-on: ubuntu-22.04 
     
     steps:
     - name: Limpiar espacio en disco
@@ -18,12 +18,19 @@ jobs:
     - name: Configurar entorno
       uses: actions/checkout@v4
 
-    - name: Instalar dependencias (Forzando Python 2)
+    - name: Instalar dependencias (Forzando Python 2 de forma segura)
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2
-        # Engañamos al sistema para que 'python' abra 'python2'
-        sudo ln -sf /usr/bin/python2 /usr/bin/python
+        # Añadí 'rsync' porque a veces ubuntu-22.04 no lo incluye por defecto y la compilación lo pide.
+        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync
+        
+        # GitHub Actions anula las rutas del sistema (/usr/bin/python). 
+        # Creamos un enlace de python2 en un directorio personal y lo ponemos de primero en el PATH.
+        # De esta forma, 'python' abrirá Python 2 (necesario para Android 8.1), 
+        # pero 'python3' seguirá funcionando (necesario para el comando 'repo').
+        mkdir -p $HOME/bin
+        ln -s /usr/bin/python2 $HOME/bin/python
+        echo "$HOME/bin" >> $GITHUB_PATH
 
     - name: Configurar repo y sincronizar TWRP 8.1
       run: |
@@ -44,7 +51,7 @@ jobs:
         cd ~/twrp
         git clone https://github.com/mateus1619/android_device_motorola_pettyl device/motorola/pettyl
 
-    - name: Compilar Recovery (Aprovechando CPUs en paralelo)
+    - name: Compilar Recovery
       run: |
         cd ~/twrp
         export ALLOW_MISSING_DEPENDENCIES=true
