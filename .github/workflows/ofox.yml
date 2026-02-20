@@ -38,6 +38,7 @@ jobs:
         
         # 2. Ejecutar el script LEGACY usando la rama 8.1
         cd sync
+        cd legacy
         # En el repositorio oficial, el script legacy se llama orangefox_sync_legacy.sh
         chmod +x orangefox_sync_legacy.sh
         ./orangefox_sync_legacy.sh --branch 8.1 --path $HOME/fox_8.1
@@ -46,7 +47,7 @@ jobs:
       run: |
         cd $HOME/fox_8.1
         # Asegúrate de que el branch de tu repositorio sea el correcto (master o twrp-8.1)
-        git clone https://github.com/elmendezz/android_device_motorola_pettyl -b master device/motorola/pettyl
+        git clone https://github.com/elmendezz/android_device_motorola_pettyl -b android-8.1 device/motorola/pettyl
 
     - name: Compilar Recovery
       run: |
