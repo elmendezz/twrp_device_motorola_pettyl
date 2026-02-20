@@ -23,20 +23,20 @@ jobs:
 
     - name: Sincronizar Fuentes de TWRP (8.1)
       run: |
-        # 1. Descargar e instalar la herramienta 'repo'
-        sudo curl --create-dirs -L -o /usr/local/bin/repo -O -L https://storage.googleapis.com/git-repo-downloads/repo
+        # 1. Descargar e instalar la herramienta 'repo' (Comando corregido)
+        sudo curl -sL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
         sudo chmod a+rx /usr/local/bin/repo
         
         # 2. Preparar el directorio de trabajo
         mkdir ~/twrp
         cd ~/twrp
         
-        # 3. Configurar Git (obligatorio para usar repo)
+        # 3. Configurar Git
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        # 4. Inicializar y sincronizar el código fuente
-        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b android-8.1
+        # 4. Inicializar y sincronizar el código fuente (Rama corregida a twrp-8.1)
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-8.1
         repo sync -j$(nproc --all) --force-sync
 
     - name: Clonar Árbol del Dispositivo (Pettyl)
