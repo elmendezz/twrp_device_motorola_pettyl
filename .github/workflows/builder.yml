@@ -208,15 +208,35 @@ OrangeFox-Recovery-Compile:
         # 4. Forzar variables en el comando de compilación
         mka recoveryimage FOX_VERSION="R11.1" OF_MAINTAINER="elmendezz" -j$(nproc --all)
 
-    - name: Publicar Release
+    - name: Publicar Release Bilingüe
       uses: softprops/action-gh-release@v2
-      if: success()
       with:
-        tag_name: orangefox-pettyl-8.1-${{ github.run_number }}
-        name: OrangeFox Recovery Pettyl (8.1)
-        files: |
-          /home/runner/fox_8.1/out/target/product/pettyl/OrangeFox-*.zip
-          /home/runner/fox_8.1/out/target/product/pettyl/recovery.img
+        tag_name: twrp-${{ steps.twrp_version.outputs.version }}-pettyl
+        name: TWRP ${{ steps.twrp_version.outputs.version }} - Pettyl
+        # Usamos la ruta absoluta para que GitHub Actions encuentre el archivo sin problemas
+        files: /home/runner/twrp/out/target/product/pettyl/twrp-${{ steps.twrp_version.outputs.version }}-pettyl.img
+        body: |
+          ## 📍 Release: OrangeFox Pettyl
+          
+          ### 📝 Notas de la versión / Release Notes:
+          - **ES:** Compilado con las últimas fuentes de TWRP y OrangeFox Legacy para Pettyl.
+          - **EN:** Compiled with the latest TWRP and OrangeFox Legacy sources for Pettyl.
+          - **ES:** Optimizado para Moto E5 Play Go Edition.
+          - **EN:** Optimized for Moto E5 Play Go Edition.
+          
+          ### 🚀 Instalación rápida / Quick Install:
+          1. **ES:** Pon el móvil en modo **Fastboot** (Vol- + Power). / **EN:** Boot device into **Fastboot** mode (Vol- + Power).
+          2. **PRUEBA / TEST:** `fastboot boot OrangeFox-R11.1-pettyl.img`
+          3. **INSTALA / INSTALL:** `fastboot flash recovery OrangeFox-R11.1-pettyl.img`
+          
+          ### 🔌 La Regla de Oro / The Golden Rule:
+          - **ES:** Olvídate de la batería. **LO QUE IMPORTA ES EL CABLE.** Asegúrate de que la conexión USB sea sólida como una roca. Un cable que se desconecta es el enemigo número uno de un buen flash.
+          - **EN:** Forget about the battery. **THE CABLE IS WHAT MATTERS.** Make sure your USB connection is rock solid. A disconnecting cable is the number one enemy of a good flash.
+          
+          ### 🆘 ¿No funciona? / Not working?:
+          - **ES:** Si el recovery no inicia o no es para tu modelo, **abre un Issue** en el repositorio. Por favor, detalla tu variante del teléfono. Si solo dices "no sirve", no podré ayudarte a que sirva. 
+          - **EN:** If the recovery doesn't boot or isn't for your model, **open an Issue** in the repository. Please detail your phone variant. If you just say "it doesn't work", I won't be able to help you fix it.
+          
+          **¡Disfrútalo! / Enjoy!**
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
