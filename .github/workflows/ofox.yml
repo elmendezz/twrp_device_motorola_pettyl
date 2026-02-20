@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04 # OrangeFox prefiere 20.04 para evitar errores de Python/GCC
+    runs-on: ubuntu-22.04 # OrangeFox prefiere 20.04 para evitar errores de Python/GCC
 
     steps:
     - name: Limpiar espacio
