@@ -1,4 +1,4 @@
-name: Compilar OrangeFox Pettyl (Fix Path)
+name: Compilar OrangeFox Pettyl (Official Script)
 
 on:
   workflow_dispatch:
@@ -26,32 +26,34 @@ jobs:
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Sincronizar Fuentes (GitHub Mirror)
+    - name: Sincronizar Fuentes (Método Oficial Sync)
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        # CREAMOS LA CARPETA MANUALMENTE PARA EVITAR EL ERROR "No such file"
-        mkdir -p ~/fox_9.0
-        cd ~/fox_9.0
+        # 1. Obtener las herramientas de sincronización
+        mkdir ~/OrangeFox_sync
+        cd ~/OrangeFox_sync
+        git clone https://gitlab.com/OrangeFox/sync.git
         
-        # Usamos el mirror de GitHub de OrangeFox para evitar el error de autenticación de GitLab
-        repo init --depth=1 -u https://github.com/OrangeFoxRecovery/Manifest.git -b fox_9.0
-        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
-
-    - name: Clonar Device Tree (Pettyl)
+        # 2. Ejecutar el script usando la ruta ABSOLUTA ($HOME)
+        # Usamos la rama 9.0 porque Pettyl es un dispositivo antiguo
+        cd sync
+        ./orangefox_sync.sh --branch 9.0 --path $HOME/fox_9.0
+        
+    - name: Clonar Device Tree
       run: |
-        cd ~/fox_9.0
-        # Clonamos tu repo en la ruta correcta
+        # Ahora que el script terminó, la carpeta $HOME/fox_9.0 DEBE existir
+        cd $HOME/fox_9.0
         git clone https://github.com/elmendezz/android_device_motorola_pettyl -b master device/motorola/pettyl
 
     - name: Compilar Recovery
       run: |
-        cd ~/fox_9.0
+        cd $HOME/fox_9.0
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # Intentar lunch con el prefijo fox_
+        # El script de OrangeFox configura el entorno para usar fox_
         lunch fox_pettyl-eng || lunch omni_pettyl-eng
         
         make recoveryimage -j$(nproc --all)
@@ -63,7 +65,7 @@ jobs:
         tag_name: orangefox-pettyl-${{ github.run_number }}
         name: OrangeFox Recovery Pettyl
         files: |
-          ~/fox_9.0/out/target/product/pettyl/OrangeFox-*.zip
-          ~/fox_9.0/out/target/product/pettyl/recovery.img
+          /home/runner/fox_9.0/out/target/product/pettyl/OrangeFox-*.zip
+          /home/runner/fox_9.0/out/target/product/pettyl/recovery.img
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
