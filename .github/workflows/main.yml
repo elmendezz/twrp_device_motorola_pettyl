@@ -1,0 +1,50 @@
+name: Compilar TWRP Pettyl
+
+on:
+  workflow_dispatch: # Permite ejecutarlo manualmente desde la pestaña Actions
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Limpiar espacio en disco
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: false
+        android: false # No borrar SDK de Android
+
+    - name: Configurar entorno de compilación
+      uses: actions/checkout@v3
+
+    - name: Instalar dependencias
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib abort-prio-map libxml2-utils xsltproc unzip python
+
+    - name: Sincronizar Fuentes de TWRP (8.1)
+      run: |
+        mkdir ~/twrp
+        cd ~/twrp
+        git config --global user.name "Tu Nombre"
+        git config --global user.email "tu@email.com"
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b android-8.1
+        repo sync -j$(nproc --all) --force-sync
+
+    - name: Clonar Árbol del Dispositivo (Pettyl)
+      run: |
+        cd ~/twrp
+        git clone https://github.com/mateus1619/android_device_motorola_pettyl device/motorola/pettyl
+
+    - name: Compilar Recovery
+      run: |
+        cd ~/twrp
+        export ALLOW_MISSING_DEPENDENCIES=true
+        source build/envsetup.sh
+        lunch omni_pettyl-eng
+        make recoveryimage -j$(nproc --all)
+
+    - name: Subir Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: TWRP-Pettyl-8.1
+        path: ~/twrp/out/target/product/pettyl/recovery.img
