@@ -43,8 +43,8 @@ jobs:
         lunch omni_pettyl-eng
         make recoveryimage -j$(nproc --all)
 
-    - name: Subir Artifact
-      uses: actions/upload-artifact@v3
+- name: Subir Artifact
+      uses: actions/upload-artifact@v4
       with:
         name: TWRP-Pettyl-8.1
         path: ~/twrp/out/target/product/pettyl/recovery.img
