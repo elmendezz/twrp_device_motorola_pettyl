@@ -58,6 +58,7 @@ jobs:
     - name: Compilar Recovery
       run: |
         cd $HOME/fox_8.1
+        
         # 1. Forzar Java 8
         export JAVA_HOME=$JAVA_HOME_8_X64
         export PATH=$JAVA_HOME/bin:$PATH
@@ -66,16 +67,17 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL="C"
         
-        # 3. CORRECCIÓN DE COMILLAS (El fix para tu error)
-        # Esto elimina las comillas dobles repetidas que están rompiendo el código C++
-        export FOX_VERSION="R11.1"
-        export OF_MAINTAINER="elmendezz"
-        
+        # 3. FIX DE COMILLAS: Eliminar las comillas dobles escapadas que causan el error
+        # Buscamos en los archivos .mk y quitamos las comillas extra
+        find vendor/recovery -name "*.mk" -type f -exec sed -i 's/""/"/g' {} +
+        find device/motorola/pettyl -name "*.mk" -type f -exec sed -i 's/""/"/g' {} +
+
         # 4. Iniciar build
         source build/envsetup.sh
         lunch omni_pettyl-eng
         
-        # 5. Ejecutar compilación
+        # 5. Ejecutar compilación (Limpiamos antes por si acaso quedó basura de la falla anterior)
+        make clean
         mka recoveryimage -j$(nproc --all)
 
     - name: Publicar Release
