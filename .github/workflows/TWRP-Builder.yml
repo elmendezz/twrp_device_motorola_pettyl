@@ -1,4 +1,4 @@
-name: Compilar TWRP Pettyl
+name: Compilar TWRP Pettyl - Mod
 
 on:
   workflow_dispatch:
