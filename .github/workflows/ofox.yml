@@ -1,4 +1,4 @@
-name: Compilar OrangeFox Pettyl (Legacy 8.1)
+name: Compilar OrangeFox Pettyl (Legacy 8.1) - python2
 
 on:
   workflow_dispatch:
@@ -14,39 +14,38 @@ jobs:
     - name: Limpiar espacio en disco
       uses: jlumbroso/free-disk-space@v1.3.1
 
-    - name: Instalar Dependencias
+    - name: Instalar Dependencias y Configurar Python 2
       run: |
         sudo apt-get update
         sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5 libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync git ccache
 
+        # Engañamos al PATH para que 'python' abra Python 2
+        mkdir -p $HOME/bin
+        ln -s /usr/bin/python2 $HOME/bin/python
+        echo "$HOME/bin" >> $GITHUB_PATH
+
     - name: Configurar Repo Tool
       run: |
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
+        # La carpeta ~/bin ya fue creada en el paso anterior y está en el PATH
+        curl https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
+        chmod a+x $HOME/bin/repo
 
     - name: Sincronizar Fuentes (Método Legacy 8.1)
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        # 1. Obtener las herramientas de sincronización
         mkdir ~/OrangeFox_sync
         cd ~/OrangeFox_sync
         git clone https://gitlab.com/OrangeFox/sync.git
         
-        # 2. Ejecutar el script LEGACY usando la rama 8.1
         cd sync
-        cd legacy
-        # En el repositorio oficial, el script legacy se llama orangefox_sync_legacy.sh
         chmod +x orangefox_sync_legacy.sh
         ./orangefox_sync_legacy.sh --branch 8.1 --path $HOME/fox_8.1
         
     - name: Clonar Device Tree
       run: |
         cd $HOME/fox_8.1
-        # Asegúrate de que el branch de tu repositorio sea el correcto (master o twrp-8.1)
         git clone https://github.com/elmendezz/android_device_motorola_pettyl -b android-8.1 device/motorola/pettyl
 
     - name: Compilar Recovery
@@ -56,11 +55,9 @@ jobs:
         export LC_ALL="C"
         
         source build/envsetup.sh
-        
-        # En el entorno 8.1 (Legacy), el prefijo OBLIGATORIO es omni_
         lunch omni_pettyl-eng
         
-        # Para 8.1 solo necesitamos mka recoveryimage (sin adbd)
+        # $(nproc --all) garantiza el uso absoluto de todos los núcleos disponibles
         mka recoveryimage -j$(nproc --all)
 
     - name: Publicar Release
