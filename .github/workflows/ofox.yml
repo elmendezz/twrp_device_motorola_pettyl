@@ -46,7 +46,7 @@ jobs:
       run: |
         # Usamos la ruta generada por el script anterior
         cd ~/fox_9.0
-        git clone https://github.com/mateus1619/android_device_motorola_pettyl -b master device/motorola/pettyl
+        git clone https://github.com/elmendezz/android_device_motorola_pettyl -b master device/motorola/pettyl
 
     - name: Compilar Recovery
       run: |
