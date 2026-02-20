@@ -43,7 +43,7 @@ jobs:
     - name: Clonar Device Tree
       run: |
         cd $HOME/fox_12.1
-        git clone https://github.com/elmendezz/android_device_motorola_pettyl -b master device/motorola/pettyl
+        git clone https://github.com/elmendezz/android_device_motorola_pettyl -b main device/motorola/pettyl
 
     - name: Compilar Recovery
       run: |
