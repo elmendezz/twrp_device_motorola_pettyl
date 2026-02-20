@@ -5,7 +5,6 @@ on:
 
 jobs:
   build:
-    # Actualizamos a ubuntu-22.04 ya que GitHub está retirando 20.04
     runs-on: ubuntu-22.04 
     
     steps:
@@ -18,23 +17,27 @@ jobs:
     - name: Configurar entorno
       uses: actions/checkout@v4
 
-    - name: Instalar dependencias (Forzando Python 2 de forma segura)
+    # SOLUCIÓN AL ERROR DE COMPILACIÓN: Forzamos el uso de Java 8
+    - name: Configurar Java 8
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '8'
+
+    - name: Instalar dependencias (Forzando Python 2)
       run: |
         sudo apt-get update
-        # Añadí 'rsync' porque a veces ubuntu-22.04 no lo incluye por defecto y la compilación lo pide.
         sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync
         
-        # GitHub Actions anula las rutas del sistema (/usr/bin/python). 
-        # Creamos un enlace de python2 en un directorio personal y lo ponemos de primero en el PATH.
-        # De esta forma, 'python' abrirá Python 2 (necesario para Android 8.1), 
-        # pero 'python3' seguirá funcionando (necesario para el comando 'repo').
+        # Engañamos al PATH para que 'python' abra Python 2
         mkdir -p $HOME/bin
         ln -s /usr/bin/python2 $HOME/bin/python
         echo "$HOME/bin" >> $GITHUB_PATH
 
     - name: Configurar repo y sincronizar TWRP 8.1
       run: |
-        sudo curl -sL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+        # Añadido -v (verbose) a curl para ver información de depuración
+        sudo curl -vL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
         sudo chmod a+rx /usr/local/bin/repo
         
         mkdir ~/twrp
@@ -44,19 +47,22 @@ jobs:
         git config --global user.email "action@github.com"
         
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-8.1
-        repo sync -j$(nproc --all) --force-sync
+        
+        # Añadido --verbose para más detalles de la descarga y forzando todos los núcleos
+        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --verbose
 
     - name: Clonar Árbol del Dispositivo (Pettyl)
       run: |
         cd ~/twrp
         git clone https://github.com/mateus1619/android_device_motorola_pettyl device/motorola/pettyl
 
-    - name: Compilar Recovery
+    - name: Compilar Recovery (Explotando todos los núcleos)
       run: |
         cd ~/twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         lunch omni_pettyl-eng
+        # $(nproc --all) garantiza el uso absoluto de todos los núcleos disponibles
         make recoveryimage -j$(nproc --all)
 
     - name: Subir Artifact
