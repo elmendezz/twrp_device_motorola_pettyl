@@ -24,16 +24,17 @@ jobs:
         distribution: 'temurin'
         java-version: '8'
 
-    - name: Instalar dependencias (Forzando Python 2)
+    - name: Instalar dependencias
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync
+        # Añadimos libncurses5 explicitamente para arreglar el error de clang
+        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5 libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync
         
         # Engañamos al PATH para que 'python' abra Python 2
         mkdir -p $HOME/bin
         ln -s /usr/bin/python2 $HOME/bin/python
         echo "$HOME/bin" >> $GITHUB_PATH
-
+        
     - name: Configurar repo y sincronizar TWRP 8.1
       run: |
         # Añadido -v (verbose) a curl para ver información de depuración
