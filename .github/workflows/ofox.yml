@@ -1,4 +1,4 @@
-name: Compilar OrangeFox Pettyl (Official Script)
+name: Compilar OrangeFox Pettyl (Legacy 8.1)
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
     - name: Instalar Dependencias
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5 libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync git
+        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5 libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync git ccache
 
     - name: Configurar Repo Tool
       run: |
@@ -26,46 +26,50 @@ jobs:
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Sincronizar Fuentes (Método Oficial Sync)
+    - name: Sincronizar Fuentes (Método Legacy 8.1)
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        # 1. Obtener las herramientas de sincronización de GitLab
+        # 1. Obtener las herramientas de sincronización
         mkdir ~/OrangeFox_sync
         cd ~/OrangeFox_sync
         git clone https://gitlab.com/OrangeFox/sync.git
         
-        # 2. Ejecutar el script (Usamos 12.1 porque es la rama estable soportada)
+        # 2. Ejecutar el script LEGACY usando la rama 8.1
         cd sync
-        ./orangefox_sync.sh --branch 12.1 --path $HOME/fox_12.1
+        # En el repositorio oficial, el script legacy se llama orangefox_sync_legacy.sh
+        chmod +x orangefox_sync_legacy.sh
+        ./orangefox_sync_legacy.sh --branch 8.1 --path $HOME/fox_8.1
         
     - name: Clonar Device Tree
       run: |
-        cd $HOME/fox_12.1
-        git clone https://github.com/elmendezz/android_device_motorola_pettyl -b android-8.1 device/motorola/pettyl
+        cd $HOME/fox_8.1
+        # Asegúrate de que el branch de tu repositorio sea el correcto (master o twrp-8.1)
+        git clone https://github.com/elmendezz/android_device_motorola_pettyl -b master device/motorola/pettyl
 
     - name: Compilar Recovery
       run: |
-        cd $HOME/fox_12.1
+        cd $HOME/fox_8.1
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL="C"
+        
         source build/envsetup.sh
         
-        # En el entorno 12.1, el prefijo suele ser twrp_
-        lunch twrp_pettyl-eng || lunch fox_pettyl-eng || lunch omni_pettyl-eng
+        # En el entorno 8.1 (Legacy), el prefijo OBLIGATORIO es omni_
+        lunch omni_pettyl-eng
         
-        # Usamos mka en lugar de make, y compilamos adbd y recoveryimage
-        mka adbd recoveryimage -j$(nproc --all)
+        # Para 8.1 solo necesitamos mka recoveryimage (sin adbd)
+        mka recoveryimage -j$(nproc --all)
 
     - name: Publicar Release
       uses: softprops/action-gh-release@v2
       if: success()
       with:
-        tag_name: orangefox-pettyl-${{ github.run_number }}
-        name: OrangeFox Recovery Pettyl
+        tag_name: orangefox-pettyl-8.1-${{ github.run_number }}
+        name: OrangeFox Recovery Pettyl (8.1)
         files: |
-          /home/runner/fox_12.1/out/target/product/pettyl/OrangeFox-*.zip
-          /home/runner/fox_12.1/out/target/product/pettyl/recovery.img
+          /home/runner/fox_8.1/out/target/product/pettyl/OrangeFox-*.zip
+          /home/runner/fox_8.1/out/target/product/pettyl/recovery.img
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
