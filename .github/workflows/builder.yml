@@ -1,4 +1,4 @@
-name: Compilar TWRP y OrangeFox Pettyl
+name: Compilar TWRP y OrangeFox Para Pettyl En Paralelo
 run-name: elmendezz-build_${{ github.run_number }}
 
 on:
