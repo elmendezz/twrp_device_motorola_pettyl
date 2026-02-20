@@ -1,4 +1,5 @@
 name: Compilar TWRP y OrangeFox Pettyl
+run-name: elmendezz-build_${{ github.run_number }}
 
 on:
   workflow_dispatch:
@@ -59,55 +60,24 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
 
-    - name: Configurar Versión TWRP (Sistema Anti-Colisión)
+    - name: Calcular Versión TWRP (Sin hacer commit aún)
       id: twrp_version_calc
       run: |
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
+        BUILD_NUM=$(sed -n '1p' versiones.txt | tr -d '\r' | tr -d ' ')
         
-        SUCCESS=false
-        # 1 intento inicial + 4 reintentos = 5
-        for i in {1..5}; do
-          # Limpiamos cualquier desastre local y bajamos la versión más limpia del repo
-          git fetch origin
-          git reset --hard origin/${GITHUB_REF##*/}
-          
-          # Leemos la línea 1 y quitamos retornos de carro fantasma o espacios
-          BUILD_NUM=$(sed -n '1p' versiones.txt | tr -d '\r' | tr -d ' ')
-          
-          # Escudo de seguridad: Si está vacío o no es un número, usamos 0
-          if ! [[ "$BUILD_NUM" =~ ^[0-9]+$ ]]; then
-            echo "Aviso: Línea 1 estaba vacía o corrupta ('$BUILD_NUM'). Forzando a 0."
-            BUILD_NUM=0
-          fi
-          
-          NEW_BUILD_NUM=$((BUILD_NUM + 1))
-          
-          # Reemplazamos solo la línea 1
-          sed -i "1s/.*/$NEW_BUILD_NUM/" versiones.txt
-          
-          git add versiones.txt
-          git commit -m "TWRP: Update build number to $NEW_BUILD_NUM" || true
-          
-          # Intentamos empujar
-          if git push origin HEAD; then
-            SUCCESS=true
-            break
-          else
-            delay=$((RANDOM % 9 + 2)) # Aleatorio entre 2 y 10 segundos
-            echo "Choque detectado con OrangeFox. Reintentando desde cero en $delay seg... (Intento $i)"
-            sleep $delay
-          fi
-        done
-        
-        if [ "$SUCCESS" != "true" ]; then 
-          echo "Error crítico: No se pudo actualizar versiones.txt tras los reintentos."
-          exit 1
+        # Escudo de seguridad: Si está vacío o no es un número, usamos 0
+        if ! [[ "$BUILD_NUM" =~ ^[0-9]+$ ]]; then
+          echo "Aviso: Línea 1 estaba vacía o corrupta ('$BUILD_NUM'). Forzando a 0."
+          BUILD_NUM=0
         fi
         
+        NEW_BUILD_NUM=$((BUILD_NUM + 1))
         VERSION="3.7.0_9-0-elmendezz_build$NEW_BUILD_NUM"
+        
+        # Guardamos en el entorno para usarlo durante el build y al final
+        echo "NEW_BUILD_NUM=$NEW_BUILD_NUM" >> $GITHUB_ENV
         echo "VERSION=$VERSION" >> $GITHUB_ENV
-        echo "¡Versión TWRP configurada como: $VERSION!"
+        echo "¡Versión TWRP calculada como: $VERSION!"
         
     - name: Configurar Java 8
       uses: actions/setup-java@v4
@@ -195,10 +165,42 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Actualizar y pushear versiones.txt (Post-Release TWRP)
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        
+        SUCCESS=false
+        for i in {1..5}; do
+          # Obtenemos la última versión del código por si OrangeFox ya hizo push
+          git fetch origin
+          git reset --hard origin/${GITHUB_REF##*/}
+          
+          # Actualizamos únicamente la línea 1 con la versión que acabamos de publicar
+          sed -i "1s/.*/${{ env.NEW_BUILD_NUM }}/" versiones.txt
+          
+          git add versiones.txt
+          git commit -m "TWRP: Update build number to ${{ env.NEW_BUILD_NUM }}" || true
+          
+          # Intentamos empujar
+          if git push origin HEAD; then
+            SUCCESS=true
+            break
+          else
+            delay=$((RANDOM % 9 + 2))
+            echo "Choque detectado. Reintentando en $delay seg... (Intento $i)"
+            sleep $delay
+          fi
+        done
+        
+        if [ "$SUCCESS" != "true" ]; then 
+          echo "Advertencia: El Release fue un éxito, pero no se pudo actualizar versiones.txt en el repositorio."
+          exit 1
+        fi
+
 
   OrangeFox-Recovery-Compile:
     runs-on: ubuntu-22.04
-    # Eliminamos el "needs: TWRP" para que corra EN PARALELO
     
     steps:
     - name: Limpiar espacio en disco
@@ -210,46 +212,22 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0 
 
-    - name: Configurar Versión OrangeFox (Sistema Anti-Colisión)
+    - name: Calcular Versión OrangeFox (Sin hacer commit aún)
       id: fox_version_calc
       run: |
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
+        BUILD_NUM=$(sed -n '2p' versiones.txt | tr -d '\r' | tr -d ' ')
         
-        SUCCESS=false
-        # 1 intento inicial + 3 reintentos = 4
-        for i in {1..4}; do
-          git pull --rebase origin HEAD
-          
-          # Leemos la línea 2
-          BUILD_NUM=$(sed -n '2p' versiones.txt)
-          NEW_BUILD_NUM=$((BUILD_NUM + 1))
-          
-          # Reemplazamos solo la línea 2
-          sed -i "2s/.*/$NEW_BUILD_NUM/" versiones.txt
-          
-          git add versiones.txt
-          git commit -m "OrangeFox: Update build number to $NEW_BUILD_NUM" || true
-          
-          if git push origin HEAD; then
-            SUCCESS=true
-            break
-          else
-            git reset --hard origin/HEAD
-            delay=$((RANDOM % 3 + 10)) # Aleatorio entre 10 y 12 segundos
-            echo "El Push chocó con TWRP. Reintentando en $delay segundos... (Intento $i de 3)"
-            sleep $delay
-          fi
-        done
-        
-        if [ "$SUCCESS" != "true" ]; then 
-          echo "Error crítico: No se pudo actualizar versiones.txt tras 3 reintentos."
-          exit 1
+        if ! [[ "$BUILD_NUM" =~ ^[0-9]+$ ]]; then
+          echo "Aviso: Línea 2 vacía o corrupta. Forzando a 0."
+          BUILD_NUM=0
         fi
         
+        NEW_BUILD_NUM=$((BUILD_NUM + 1))
         VERSION="R11.1-elmendezz_build$NEW_BUILD_NUM"
+        
+        echo "NEW_BUILD_NUM=$NEW_BUILD_NUM" >> $GITHUB_ENV
         echo "VERSION=$VERSION" >> $GITHUB_ENV
-        echo "¡Versión OrangeFox configurada como: $VERSION!"
+        echo "¡Versión OrangeFox calculada como: $VERSION!"
 
     - name: Configurar Java 8 (Requerido para Android 8.1)
       uses: actions/setup-java@v4
@@ -339,3 +317,34 @@ jobs:
           3. **INSTALA / INSTALL:** `fastboot flash recovery OrangeFox-${{ env.VERSION }}-pettyl.img`
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Actualizar y pushear versiones.txt (Post-Release OrangeFox)
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        
+        SUCCESS=false
+        for i in {1..5}; do
+          git fetch origin
+          git reset --hard origin/${GITHUB_REF##*/}
+          
+          # Actualizamos únicamente la línea 2 con la versión que acabamos de publicar
+          sed -i "2s/.*/${{ env.NEW_BUILD_NUM }}/" versiones.txt
+          
+          git add versiones.txt
+          git commit -m "OrangeFox: Update build number to ${{ env.NEW_BUILD_NUM }}" || true
+          
+          if git push origin HEAD; then
+            SUCCESS=true
+            break
+          else
+            delay=$((RANDOM % 9 + 2))
+            echo "Choque detectado. Reintentando en $delay seg... (Intento $i)"
+            sleep $delay
+          fi
+        done
+        
+        if [ "$SUCCESS" != "true" ]; then 
+          echo "Advertencia: El Release fue un éxito, pero no se pudo actualizar versiones.txt en el repositorio."
+          exit 1
+        fi
