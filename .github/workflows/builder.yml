@@ -1,4 +1,4 @@
-name: Compilar TWRP Pettyl - Mod
+name: Compilar TWRP y OrangeFox Pettyl
 
 on:
   workflow_dispatch:
@@ -20,7 +20,6 @@ on:
         required: false
         default: 'twrp-9.0'
 
-# PERMISO VITAL para que GitHub Actions pueda publicar un "Release"
 permissions:
   contents: write
 
@@ -35,8 +34,34 @@ jobs:
         tool-cache: false
         android: false
 
-    - name: Configurar entorno
+    - name: Descargar el repositorio principal
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Configurar Versión TWRP (Leer y actualizar versiones.txt)
+      id: twrp_version_calc
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        
+        # Leemos la línea 1
+        BUILD_NUM=$(sed -n '1p' versiones.txt)
+        NEW_BUILD_NUM=$((BUILD_NUM + 1))
+        
+        # Reemplazamos solo la línea 1
+        sed -i "1s/.*/$NEW_BUILD_NUM/" versiones.txt
+        
+        git add versiones.txt
+        git commit -m "TWRP: Update build number to $NEW_BUILD_NUM" || echo "No changes to commit"
+        
+        # Hacemos pull rebase por si OrangeFox modificó algo al mismo tiempo
+        git pull --rebase origin HEAD
+        git push origin HEAD
+        
+        VERSION="3.7.0_9-0-elmendezz_build$NEW_BUILD_NUM"
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "¡Versión configurada como: $VERSION!"
 
     - name: Configurar Java 8
       uses: actions/setup-java@v4
@@ -49,7 +74,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5 libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync
         
-        # Engañamos al PATH para que 'python' abra Python 2
         mkdir -p $HOME/bin
         ln -s /usr/bin/python2 $HOME/bin/python
         echo "$HOME/bin" >> $GITHUB_PATH
@@ -62,24 +86,19 @@ jobs:
         mkdir ~/twrp
         cd ~/twrp
         
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
-        
-        # Usamos las variables inyectadas por el menú de GitHub (inputs)
         repo init --depth=1 -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }}
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --verbose
 
     - name: Clonar Árbol del Dispositivo (Pettyl)
       run: |
         cd ~/twrp
-        # Lógica para clonar con o sin rama específica dependiendo de lo que pongas en el menú
         if [ -n "${{ github.event.inputs.device_branch }}" ]; then
           git clone -b ${{ github.event.inputs.device_branch }} ${{ github.event.inputs.device_tree_url }} device/motorola/pettyl
         else
           git clone ${{ github.event.inputs.device_tree_url }} device/motorola/pettyl
         fi
 
-    - name: Compilar Recovery
+    - name: Compilar Recovery TWRP
       run: |
         cd ~/twrp
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -87,62 +106,107 @@ jobs:
         lunch omni_pettyl-eng
         make recoveryimage -j$(nproc --all)
 
-    - name: Extraer versión de TWRP y Preparar Archivos
-      id: twrp_version
+    - name: Preparar Archivos (.img y .zip)
       run: |
-        cd ~/twrp
-        # Configuramos la versión detectada
-        VERSION="3.7.0_9-0"
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Versión configurada: $VERSION"
+        cd ~/twrp/out/target/product/pettyl/
         
-        # Renombramos el archivo recovery.img con la versión para el Release
-        mv out/target/product/pettyl/recovery.img out/target/product/pettyl/twrp-${VERSION}-pettyl.img
+        IMG_FILE="twrp-${{ env.VERSION }}-pettyl.img"
+        ZIP_FILE="twrp-${{ env.VERSION }}-pettyl.zip"
+        
+        # Renombrar IMG
+        mv recovery.img $IMG_FILE
+        
+        # Crear ZIP a partir del IMG
+        zip $ZIP_FILE $IMG_FILE
+
+    - name: Subir como Artifact de GitHub
+      uses: actions/upload-artifact@v4
+      with:
+        name: TWRP-${{ env.VERSION }}-pettyl
+        path: |
+          /home/runner/twrp/out/target/product/pettyl/twrp-${{ env.VERSION }}-pettyl.img
+          /home/runner/twrp/out/target/product/pettyl/twrp-${{ env.VERSION }}-pettyl.zip
 
     - name: Publicar Release Bilingüe
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: twrp-${{ steps.twrp_version.outputs.version }}-pettyl
-        name: TWRP ${{ steps.twrp_version.outputs.version }} - Pettyl
-        # Usamos la ruta absoluta para que GitHub Actions encuentre el archivo sin problemas
-        files: /home/runner/twrp/out/target/product/pettyl/twrp-${{ steps.twrp_version.outputs.version }}-pettyl.img
+        tag_name: twrp-${{ env.VERSION }}-pettyl
+        name: TWRP ${{ env.VERSION }} - Pettyl
+        files: |
+          /home/runner/twrp/out/target/product/pettyl/twrp-${{ env.VERSION }}-pettyl.img
+          /home/runner/twrp/out/target/product/pettyl/twrp-${{ env.VERSION }}-pettyl.zip
         body: |
           ## 📍 Release: TWRP Pettyl
+          **Build:** `${{ env.VERSION }}`
           
           ### 📝 Notas de la versión / Release Notes:
           - **ES:** Compilado con las últimas fuentes de TWRP para Pettyl.
           - **EN:** Compiled with the latest TWRP sources for Pettyl.
-          - **ES:** Optimizado para Moto E5 Play Go Edition.
-          - **EN:** Optimized for Moto E5 Play Go Edition.
+          - **ES:** Optimizado para Moto E5 Play Go Edition. Incluye versiones `.img` y `.zip`.
+          - **EN:** Optimized for Moto E5 Play Go Edition. Includes `.img` and `.zip` versions.
           
           ### 🚀 Instalación rápida / Quick Install:
           1. **ES:** Pon el móvil en modo **Fastboot** (Vol- + Power). / **EN:** Boot device into **Fastboot** mode (Vol- + Power).
-          2. **PRUEBA / TEST:** `fastboot boot twrp-${{ steps.twrp_version.outputs.version }}-pettyl.img`
-          3. **INSTALA / INSTALL:** `fastboot flash recovery twrp-${{ steps.twrp_version.outputs.version }}-pettyl.img`
+          2. **PRUEBA / TEST:** `fastboot boot twrp-${{ env.VERSION }}-pettyl.img`
+          3. **INSTALA / INSTALL:** `fastboot flash recovery twrp-${{ env.VERSION }}-pettyl.img`
           
           ### 🔌 La Regla de Oro / The Golden Rule:
           - **ES:** Olvídate de la batería. **LO QUE IMPORTA ES EL CABLE.** Asegúrate de que la conexión USB sea sólida como una roca. Un cable que se desconecta es el enemigo número uno de un buen flash.
           - **EN:** Forget about the battery. **THE CABLE IS WHAT MATTERS.** Make sure your USB connection is rock solid. A disconnecting cable is the number one enemy of a good flash.
           
           ### 🆘 ¿No funciona? / Not working?:
-          - **ES:** Si el recovery no inicia o no es para tu modelo, **abre un Issue** en el repositorio. Por favor, detalla tu variante del teléfono. Si solo dices "no sirve", no podré ayudarte a que sirva. 
-          - **EN:** If the recovery doesn't boot or isn't for your model, **open an Issue** in the repository. Please detail your phone variant. If you just say "it doesn't work", I won't be able to help you fix it.
+          - **ES:** Si el recovery no inicia o no es para tu modelo, **abre un Issue** en el repositorio.
+          - **EN:** If the recovery doesn't boot or isn't for your model, **open an Issue** in the repository.
           
           **¡Disfrútalo! / Enjoy!**
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-OrangeFox-Recovery-Compile:
-    runs-on: ubuntu-22.04
 
+  OrangeFox-Recovery-Compile:
+    runs-on: ubuntu-22.04
+    # Para evitar que se pisen los cambios de versiones.txt, le decimos que espere a TWRP
+    needs: TWRP-Recovery-Compile
+    
     steps:
     - name: Limpiar espacio en disco
       uses: jlumbroso/free-disk-space@v1.3.1
 
+    - name: Descargar el repositorio principal
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        # Obtenemos los últimos cambios (el commit que acaba de hacer TWRP)
+        fetch-depth: 0 
+
+    - name: Configurar Versión OrangeFox (Leer y actualizar versiones.txt)
+      id: fox_version_calc
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        
+        # Tiramos del código más reciente por precaución
+        git pull --rebase origin HEAD
+        
+        # Leemos la línea 2
+        BUILD_NUM=$(sed -n '2p' versiones.txt)
+        NEW_BUILD_NUM=$((BUILD_NUM + 1))
+        
+        # Reemplazamos solo la línea 2
+        sed -i "2s/.*/$NEW_BUILD_NUM/" versiones.txt
+        
+        git add versiones.txt
+        git commit -m "OrangeFox: Update build number to $NEW_BUILD_NUM" || echo "No changes to commit"
+        git push origin HEAD
+        
+        VERSION="R11.1-elmendezz_build$NEW_BUILD_NUM"
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "¡Versión configurada como: $VERSION!"
+
     - name: Configurar Java 8 (Requerido para Android 8.1)
       uses: actions/setup-java@v4
       with:
-        distribution: 'temurin' # O 'zulu'
+        distribution: 'temurin'
         java-version: '8'
 
     - name: Instalar Dependencias y Configurar Python 2
@@ -150,7 +214,6 @@ OrangeFox-Recovery-Compile:
         sudo apt-get update
         sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5 libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync git ccache
 
-        # Engañamos al PATH para que 'python' abra Python 2
         mkdir -p $HOME/bin
         ln -s /usr/bin/python2 $HOME/bin/python
         echo "$HOME/bin" >> $GITHUB_PATH
@@ -162,9 +225,6 @@ OrangeFox-Recovery-Compile:
 
     - name: Sincronizar Fuentes (Método Legacy 8.1)
       run: |
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
-        
         mkdir -p ~/OrangeFox_sync
         cd ~/OrangeFox_sync
         if [ ! -d "sync" ]; then
@@ -180,43 +240,41 @@ OrangeFox-Recovery-Compile:
         cd $HOME/fox_8.1
         git clone https://github.com/elmendezz/android_device_motorola_pettyl -b android-8.1 device/motorola/pettyl
 
-    - name: Compilar Recovery
+    - name: Compilar Recovery OrangeFox
       run: |
         cd $HOME/fox_8.1
         
-        # 1. Java 8 y Entorno
         export JAVA_HOME=$JAVA_HOME_8_X64
         export PATH=$JAVA_HOME/bin:$PATH
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL="C"
         
-        # 2. LIMPIEZA DE CÓDIGO FUENTE (Fix Definitivo)
-        # Este comando busca las macros problemáticas en el código y les quita las comillas dobles
-        # para que el compilador no reciba ""Texto""
-        echo "Aplicando parches al código fuente..."
-        sed -i 's/FOX_VERSION/ "R11.1" /g' bootable/recovery/twrp.cpp
-        sed -i 's/FOX_VERSION/ "R11.1" /g' bootable/recovery/variables.h
-        sed -i 's/OF_MAINTAINER/ "elmendezz" /g' bootable/recovery/twrp.cpp
-
-        # 3. Configuración y compilación
         source build/envsetup.sh
         lunch omni_pettyl-eng
-        
-        # Limpiamos rastros de la falla anterior
         make clean
         
-        # 4. Forzar variables en el comando de compilación
-        mka recoveryimage FOX_VERSION="R11.1" OF_MAINTAINER="elmendezz" -j$(nproc --all)
+        # Pasamos la variable dinámica que creamos en el paso de git
+        mka recoveryimage FOX_VERSION="${{ env.VERSION }}" OF_MAINTAINER="elmendezz" -j$(nproc --all)
+
+    - name: Subir como Artifact de GitHub
+      uses: actions/upload-artifact@v4
+      with:
+        name: OrangeFox-${{ env.VERSION }}-pettyl
+        path: |
+          /home/runner/fox_8.1/out/target/product/pettyl/OrangeFox-*-pettyl.img
+          /home/runner/fox_8.1/out/target/product/pettyl/OrangeFox-*-pettyl.zip
 
     - name: Publicar Release Bilingüe
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: twrp-${{ steps.twrp_version.outputs.version }}-pettyl
-        name: TWRP ${{ steps.twrp_version.outputs.version }} - Pettyl
-        # Usamos la ruta absoluta para que GitHub Actions encuentre el archivo sin problemas
-        files: /home/runner/twrp/out/target/product/pettyl/twrp-${{ steps.twrp_version.outputs.version }}-pettyl.img
+        tag_name: OrangeFox-${{ env.VERSION }}-pettyl
+        name: OrangeFox ${{ env.VERSION }} - Pettyl
+        files: |
+          /home/runner/fox_8.1/out/target/product/pettyl/OrangeFox-*-pettyl.img
+          /home/runner/fox_8.1/out/target/product/pettyl/OrangeFox-*-pettyl.zip
         body: |
           ## 📍 Release: OrangeFox Pettyl
+          **Build:** `${{ env.VERSION }}`
           
           ### 📝 Notas de la versión / Release Notes:
           - **ES:** Compilado con las últimas fuentes de TWRP y OrangeFox Legacy para Pettyl.
@@ -226,16 +284,16 @@ OrangeFox-Recovery-Compile:
           
           ### 🚀 Instalación rápida / Quick Install:
           1. **ES:** Pon el móvil en modo **Fastboot** (Vol- + Power). / **EN:** Boot device into **Fastboot** mode (Vol- + Power).
-          2. **PRUEBA / TEST:** `fastboot boot OrangeFox-R11.1-pettyl.img`
-          3. **INSTALA / INSTALL:** `fastboot flash recovery OrangeFox-R11.1-pettyl.img`
+          2. **PRUEBA / TEST:** `fastboot boot OrangeFox-${{ env.VERSION }}-pettyl.img`
+          3. **INSTALA / INSTALL:** `fastboot flash recovery OrangeFox-${{ env.VERSION }}-pettyl.img`
           
           ### 🔌 La Regla de Oro / The Golden Rule:
           - **ES:** Olvídate de la batería. **LO QUE IMPORTA ES EL CABLE.** Asegúrate de que la conexión USB sea sólida como una roca. Un cable que se desconecta es el enemigo número uno de un buen flash.
           - **EN:** Forget about the battery. **THE CABLE IS WHAT MATTERS.** Make sure your USB connection is rock solid. A disconnecting cable is the number one enemy of a good flash.
           
           ### 🆘 ¿No funciona? / Not working?:
-          - **ES:** Si el recovery no inicia o no es para tu modelo, **abre un Issue** en el repositorio. Por favor, detalla tu variante del teléfono. Si solo dices "no sirve", no podré ayudarte a que sirva. 
-          - **EN:** If the recovery doesn't boot or isn't for your model, **open an Issue** in the repository. Please detail your phone variant. If you just say "it doesn't work", I won't be able to help you fix it.
+          - **ES:** Si el recovery no inicia o no es para tu modelo, **abre un Issue** en el repositorio.
+          - **EN:** If the recovery doesn't boot or isn't for your model, **open an Issue** in the repository.
           
           **¡Disfrútalo! / Enjoy!**
       env:
