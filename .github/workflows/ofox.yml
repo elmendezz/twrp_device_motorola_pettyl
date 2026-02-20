@@ -1,76 +1,81 @@
-name: Compilar OrangeFox Pettyl
+name: Compilar OrangeFox Pettyl (Official Sync)
 
 on:
   workflow_dispatch:
-    inputs:
-      manifest_url:
-        description: 'URL del Manifiesto de OrangeFox'
-        required: true
-        default: 'https://gitlab.com/OrangeFox/Manifest.git'
-      manifest_branch:
-        description: 'Rama (p. ej. fox_9.0 o fox_7.1)'
-        required: true
-        default: 'fox_9.0'
-      device_tree_url:
-        description: 'URL de tu Device Tree'
-        required: true
-        default: 'https://github.com/mateus1619/android_device_motorola_pettyl'
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: ubuntu-22.04 # OrangeFox prefiere 20.04 para evitar errores de Python/GCC
+    runs-on: ubuntu-22.04
 
     steps:
-    - name: Limpiar espacio
+    - name: Limpiar espacio en disco
       uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: false
+        android: false
 
     - name: Instalar Dependencias
       run: |
         sudo apt-get update
         sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5 libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync git
 
-    - name: Configurar Repo
+    - name: Configurar Repo Tool
       run: |
-        mkdir ~/bin
+        mkdir -p ~/bin
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Sincronizar Fuentes OrangeFox
+    - name: Sincronizar Fuentes con OrangeFox Sync Script
       run: |
-        mkdir ~/fox
-        cd ~/fox
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        repo init --depth=1 -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }}
-        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+        
+        # Clonar el script de sincronización oficial
+        git clone https://gitlab.com/OrangeFox/sync.git ~/fox_sync
+        cd ~/fox_sync
+        
+        # Ejecutar el script para la rama 9.0 (compatible con Pettyl Android 9)
+        # --path es donde se descargará todo el código fuente
+        ./orangefox_sync.sh --branch 9.0 --path ~/fox_9.0
 
-    - name: Clonar Device Tree
+    - name: Clonar Device Tree (Pettyl)
       run: |
-        cd ~/fox
-        git clone ${{ github.event.inputs.device_tree_url }} -b master device/motorola/pettyl
+        # Usamos la ruta generada por el script anterior
+        cd ~/fox_9.0
+        git clone https://github.com/mateus1619/android_device_motorola_pettyl -b master device/motorola/pettyl
 
-    - name: Compilar OrangeFox
+    - name: Compilar Recovery
       run: |
-        cd ~/fox
-        set +e
-        source build/envsetup.sh
+        cd ~/fox_9.0
+        # Forzamos el uso de Python 2 para builds antiguos
         export ALLOW_MISSING_DEPENDENCIES=true
-        # OrangeFox usa fox_ en lugar de omni_
-        lunch fox_pettyl-eng 
+        source build/envsetup.sh
+        
+        # OrangeFox requiere preparar el entorno de lunch
+        lunch omni_pettyl-eng || lunch fox_pettyl-eng
+        
+        # Compilar
         make recoveryimage -j$(nproc --all)
 
-    - name: Subir a Releases
+    - name: Preparar Archivos para Release
+      id: check_files
+      run: |
+        cd ~/fox_9.0/out/target/product/pettyl
+        # OrangeFox genera un ZIP que es lo más importante
+        OUTPUT_ZIP=$(ls OrangeFox-*.zip | head -n 1)
+        echo "zip_name=$OUTPUT_ZIP" >> $GITHUB_OUTPUT
+
+    - name: Publicar Release
       uses: softprops/action-gh-release@v2
-      if: success()
       with:
-        tag_name: orangefox-pettyl
-        name: OrangeFox Recovery para Pettyl
+        tag_name: orangefox-pettyl-${{ github.run_number }}
+        name: OrangeFox Recovery Pettyl (R11.1)
         files: |
-          ~/fox/out/target/product/pettyl/OrangeFox-*.zip
-          ~/fox/out/target/product/pettyl/recovery.img
+          ~/fox_9.0/out/target/product/pettyl/*.zip
+          ~/fox_9.0/out/target/product/pettyl/recovery.img
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
