@@ -1,0 +1,76 @@
+name: Compilar OrangeFox Pettyl
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_url:
+        description: 'URL del Manifiesto de OrangeFox'
+        required: true
+        default: 'https://gitlab.com/OrangeFox/Manifest.git'
+      manifest_branch:
+        description: 'Rama (p. ej. fox_9.0 o fox_7.1)'
+        required: true
+        default: 'fox_9.0'
+      device_tree_url:
+        description: 'URL de tu Device Tree'
+        required: true
+        default: 'https://github.com/mateus1619/android_device_motorola_pettyl'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04 # OrangeFox prefiere 20.04 para evitar errores de Python/GCC
+
+    steps:
+    - name: Limpiar espacio
+      uses: jlumbroso/free-disk-space@v1.3.1
+
+    - name: Instalar Dependencias
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5 libncurses5-dev libssl-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip python2 rsync git
+
+    - name: Configurar Repo
+      run: |
+        mkdir ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "$HOME/bin" >> $GITHUB_PATH
+
+    - name: Sincronizar Fuentes OrangeFox
+      run: |
+        mkdir ~/fox
+        cd ~/fox
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        repo init --depth=1 -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }}
+        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+    - name: Clonar Device Tree
+      run: |
+        cd ~/fox
+        git clone ${{ github.event.inputs.device_tree_url }} -b master device/motorola/pettyl
+
+    - name: Compilar OrangeFox
+      run: |
+        cd ~/fox
+        set +e
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        # OrangeFox usa fox_ en lugar de omni_
+        lunch fox_pettyl-eng 
+        make recoveryimage -j$(nproc --all)
+
+    - name: Subir a Releases
+      uses: softprops/action-gh-release@v2
+      if: success()
+      with:
+        tag_name: orangefox-pettyl
+        name: OrangeFox Recovery para Pettyl
+        files: |
+          ~/fox/out/target/product/pettyl/OrangeFox-*.zip
+          ~/fox/out/target/product/pettyl/recovery.img
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
