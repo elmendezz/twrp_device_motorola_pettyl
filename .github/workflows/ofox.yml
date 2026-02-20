@@ -1,4 +1,4 @@
-name: Compilar OrangeFox Pettyl (Manual Sync)
+name: Compilar OrangeFox Pettyl (Official Script)
 
 on:
   workflow_dispatch:
@@ -26,46 +26,37 @@ jobs:
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Sincronizar Base TWRP
+    - name: Sincronizar Fuentes (Método Oficial Sync)
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        # Creamos la carpeta de trabajo
-        mkdir -p /home/runner/orangefox
-        cd /home/runner/orangefox
+        # 1. Obtener las herramientas de sincronización de GitLab
+        mkdir ~/OrangeFox_sync
+        cd ~/OrangeFox_sync
+        git clone https://gitlab.com/OrangeFox/sync.git
         
-        # Sincronizamos el manifiesto de TWRP 8.1 (base para Pettyl)
-        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-8.1
-        repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
-
-    - name: Inyectar Fuentes de OrangeFox
+        # 2. Ejecutar el script (Usamos 12.1 porque es la rama estable soportada)
+        cd sync
+        ./orangefox_sync.sh --branch 12.1 --path $HOME/fox_12.1
+        
+    - name: Clonar Device Tree
       run: |
-        cd /home/runner/orangefox
-        
-        # Clonamos el recovery core de OrangeFox en la ruta de TWRP
-        rm -rf bootable/recovery
-        git clone https://gitlab.com/OrangeFox/ext-recovery/bootable-recovery.git -b fox_9.0 bootable/recovery
-        
-        # Clonamos el vendor de OrangeFox (necesario para el tema y funciones extra)
-        mkdir -p vendor/recovery
-        git clone https://gitlab.com/OrangeFox/ext-recovery/vendor-recovery.git -b fox_9.0 vendor/recovery
-
-    - name: Clonar Device Tree (Pettyl)
-      run: |
-        cd /home/runner/orangefox
+        cd $HOME/fox_12.1
         git clone https://github.com/elmendezz/android_device_motorola_pettyl -b master device/motorola/pettyl
 
     - name: Compilar Recovery
       run: |
-        cd /home/runner/orangefox
+        cd $HOME/fox_12.1
         export ALLOW_MISSING_DEPENDENCIES=true
+        export LC_ALL="C"
         source build/envsetup.sh
         
-        # Para Pettyl usamos omni_ ya que el árbol original es de Omni
-        lunch omni_pettyl-eng
+        # En el entorno 12.1, el prefijo suele ser twrp_
+        lunch twrp_pettyl-eng || lunch fox_pettyl-eng || lunch omni_pettyl-eng
         
-        make recoveryimage -j$(nproc --all)
+        # Usamos mka en lugar de make, y compilamos adbd y recoveryimage
+        mka adbd recoveryimage -j$(nproc --all)
 
     - name: Publicar Release
       uses: softprops/action-gh-release@v2
@@ -74,7 +65,7 @@ jobs:
         tag_name: orangefox-pettyl-${{ github.run_number }}
         name: OrangeFox Recovery Pettyl
         files: |
-          /home/runner/orangefox/out/target/product/pettyl/recovery.img
-          /home/runner/orangefox/out/target/product/pettyl/OrangeFox-*.zip
+          /home/runner/fox_12.1/out/target/product/pettyl/OrangeFox-*.zip
+          /home/runner/fox_12.1/out/target/product/pettyl/recovery.img
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
