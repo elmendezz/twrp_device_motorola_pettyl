@@ -70,7 +70,7 @@ jobs:
       with:
         max-size: "10G"
 
-    -     - name: Configurar repo y sincronizar PBRP
+    - name: Configurar repo y sincronizar PBRP
       run: |
         sudo curl -vL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
         sudo chmod a+rx /usr/local/bin/repo
