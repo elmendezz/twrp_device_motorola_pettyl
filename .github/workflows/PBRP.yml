@@ -18,7 +18,7 @@ on:
       device_branch:
         description: 'Rama del Device Tree (En blanco para main/master)'
         required: false
-        default: 'twrp-9.0'
+        default: 'android-8.1'
       device_manufacturer:
         description: 'Fabricante (ej. motorola, xiaomi)'
         required: true
