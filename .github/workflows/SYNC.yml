@@ -1,0 +1,40 @@
+name: Copiar Repositorio TWRP
+
+on:
+  workflow_dispatch: # Te permite ejecutar este script manualmente desde la pestaña "Actions"
+
+jobs:
+  copy-branches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout de tu repositorio
+        uses: actions/checkout@v4
+
+      - name: Crear directorios de destino
+        run: |
+          mkdir -p "TeamWinRecovery Sources/Android-8.1"
+          mkdir -p "TeamWinRecovery Sources/Android-9.0"
+
+      - name: Clonar y copiar la branch 8.1
+        run: |
+          # Clonamos solo esa branch temporalmente
+          git clone --depth 1 -b twrp-8.1 https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git temp-8.1
+          # Copiamos todo excepto la carpeta .git para evitar crear un submódulo por error
+          rsync -av --exclude='.git' temp-8.1/ "TeamWinRecovery Sources/Android-8.1/"
+          # Borramos la carpeta temporal
+          rm -rf temp-8.1
+
+      - name: Clonar y copiar la branch 9.0
+        run: |
+          git clone --depth 1 -b twrp-9.0 https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git temp-9.0
+          rsync -av --exclude='.git' temp-9.0/ "TeamWinRecovery Sources/Android-9.0/"
+          rm -rf temp-9.0
+
+      - name: Hacer Commit y Push a tu repositorio
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add "TeamWinRecovery Sources/"
+          # Si no hay cambios nuevos, no hará commit para no tirar error
+          git commit -m "Sincronizando sources de TWRP 8.1 y 9.0" || echo "No hay cambios para hacer commit"
+          git push
