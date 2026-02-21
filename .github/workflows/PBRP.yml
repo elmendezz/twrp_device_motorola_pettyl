@@ -1,0 +1,155 @@
+name: Compilar PitchBlack Recovery (PBRP)
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_url:
+        description: 'URL del Manifiesto de PBRP'
+        required: true
+        default: 'https://github.com/PitchBlackRecoveryProject/manifest_pb.git'
+      manifest_branch:
+        description: 'Rama del Manifiesto de PBRP'
+        required: true
+        default: 'android-9.0'
+      device_tree_url:
+        description: 'URL del Device Tree'
+        required: true
+        default: 'https://github.com/elmendezz/android_device_motorola_pettyl'
+      device_branch:
+        description: 'Rama del Device Tree (En blanco para main/master)'
+        required: false
+        default: 'twrp-9.0'
+      device_manufacturer:
+        description: 'Fabricante (ej. motorola, xiaomi)'
+        required: true
+        default: 'motorola'
+      device_codename:
+        description: 'Nombre clave del dispositivo (ej. pettyl)'
+        required: true
+        default: 'pettyl'
+      build_target:
+        description: 'Objetivo de compilación (mka pbrp o mka recoveryimage)'
+        required: true
+        default: 'pbrp'
+
+permissions:
+  contents: write
+
+jobs:
+  PBRP-Compile:
+    runs-on: ubuntu-22.04 
+    
+    steps:
+    - name: Limpiar espacio en disco
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: false
+        android: false
+
+    - name: Configurar entorno
+      uses: actions/checkout@v4
+
+    - name: Configurar Java 8
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '8'
+
+    - name: Instalar dependencias
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
+        
+        # Enlace simbólico para Python 2 (necesario en árboles antiguos)
+        mkdir -p $HOME/bin
+        ln -s /usr/bin/python2 $HOME/bin/python
+        echo "$HOME/bin" >> $GITHUB_PATH
+
+    - name: Configurar CCache (Acelera compilaciones futuras)
+      uses: hendrikmuhs/ccache-action@v1.2.14
+      with:
+        max-size: "10G"
+
+    - name: Configurar repo y sincronizar PBRP
+      run: |
+        sudo curl -vL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+        sudo chmod a+rx /usr/local/bin/repo
+        
+        mkdir ~/pbrp
+        cd ~/pbrp
+        
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        
+        repo init --depth=1 -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }}
+        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --verbose
+
+    - name: Clonar Árbol del Dispositivo
+      run: |
+        cd ~/pbrp
+        if [ -n "${{ github.event.inputs.device_branch }}" ]; then
+          git clone -b ${{ github.event.inputs.device_branch }} ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }}
+        else
+          git clone ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }}
+        fi
+
+    - name: Compilar PBRP
+      run: |
+        cd ~/pbrp
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export USE_CCACHE=1
+        export CCACHE_EXEC=/usr/bin/ccache
+        
+        source build/envsetup.sh
+        lunch omni_${{ github.event.inputs.device_codename }}-eng
+        mka ${{ github.event.inputs.build_target }} -j$(nproc --all)
+
+    - name: Empaquetar y Preparar Archivos para Subir
+      run: |
+        cd ~/pbrp/out/target/product/${{ github.event.inputs.device_codename }}
+        mkdir -p ~/workspace/releases
+        
+        # Buscar el ZIP de PBRP (si existe) y moverlo
+        PBRP_ZIP=$(find . -maxdepth 1 -name "PBRP-*.zip" -type f | head -n 1)
+        if [ -n "$PBRP_ZIP" ]; then
+          cp "$PBRP_ZIP" ~/workspace/releases/
+          echo "ZIP encontrado: $PBRP_ZIP"
+        else
+          echo "No se generó archivo ZIP."
+        fi
+        
+        # Copiar y renombrar el recovery.img base
+        if [ -f "recovery.img" ]; then
+          cp recovery.img ~/workspace/releases/PBRP-${{ github.event.inputs.device_codename }}-recovery.img
+        fi
+
+    - name: Subir Archivos como Artefactos de GitHub Actions
+      uses: actions/upload-artifact@v4
+      with:
+        name: PBRP-${{ github.event.inputs.device_codename }}-Build
+        path: /home/runner/workspace/releases/*
+
+    - name: Publicar Release Bilingüe
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: PBRP-${{ github.event.inputs.device_codename }}-${{ github.run_number }}
+        name: PitchBlack Recovery Project - ${{ github.event.inputs.device_codename }} (Build ${{ github.run_number }})
+        files: /home/runner/workspace/releases/*
+        body: |
+          ## 📍 Release: PitchBlack Recovery Project (PBRP)
+          **Dispositivo / Device:** ${{ github.event.inputs.device_manufacturer }} ${{ github.event.inputs.device_codename }}
+          
+          ### 📝 Notas de la versión / Release Notes:
+          - **ES:** Compilación automatizada de PBRP. Incluye archivo flasheable `.zip` (recomendado) y archivo de imagen `.img`.
+          - **EN:** Automated PBRP build. Includes flashable `.zip` (recommended) and `.img` image file.
+          
+          ### 🚀 Instalación / Installation:
+          1. **ES:** Inicia en modo Fastboot. / **EN:** Boot into Fastboot mode.
+          2. **ES:** Flashea temporalmente la imagen: `fastboot boot PBRP-*-recovery.img` / **EN:** Temporarily boot the image: `fastboot boot PBRP-*-recovery.img`.
+          3. **ES:** Una vez dentro de PBRP, ve a Install, selecciona el archivo `.zip` de PBRP y desliza para instalar de forma permanente. / **EN:** Once in PBRP, go to Install, select the PBRP `.zip` file, and swipe to permanently install.
+          
+          ### 🔌 La Regla de Oro / The Golden Rule:
+          - **ES:** Usa un cable USB de buena calidad. La mayoría de los errores de fastboot/adb ocurren por cables defectuosos.
+          - **EN:** Use a high-quality USB cable. Most fastboot/adb errors happen because of faulty cables.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
