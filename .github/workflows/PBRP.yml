@@ -70,7 +70,7 @@ jobs:
       with:
         max-size: "10G"
 
-    - name: Configurar repo y sincronizar PBRP
+    -     - name: Configurar repo y sincronizar PBRP
       run: |
         sudo curl -vL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
         sudo chmod a+rx /usr/local/bin/repo
@@ -81,7 +81,10 @@ jobs:
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        repo init --depth=1 -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }}
+        # ⚠️ Quitamos --depth=1 de la inicialización para evitar el error de ref en repos antiguos
+        repo init -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }}
+        
+        # Sincronizamos (dejamos --force-sync por seguridad)
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --verbose
 
     - name: Clonar Árbol del Dispositivo
