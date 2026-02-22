@@ -133,9 +133,9 @@ jobs:
         git clone https://github.com/TeamWin/android_vendor_omni.git -b android-9.0 vendor/omni &
         PID_OMNI=$!
         
-        # TAREA C: Dependencia de Cifrado Qualcomm (libcryptfs_hw)
+        # TAREA C: Dependencia de Cifrado Qualcomm (libcryptfs_hw vía LineageOS)
         mkdir -p vendor/qcom/opensource
-        git clone https://github.com/TeamWin/android_vendor_qcom_opensource_cryptfs_hw.git -b android-9.0 vendor/qcom/opensource/cryptfs_hw &
+        git clone https://github.com/LineageOS/android_vendor_qcom_opensource_cryptfs_hw.git -b lineage-16.0 vendor/qcom/opensource/cryptfs_hw &
         PID_CRYPT=$!
         
         wait $PID_DT || exit 1
