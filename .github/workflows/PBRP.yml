@@ -105,8 +105,14 @@ jobs:
         </manifest>
         EOF
         
+        echo "Limpiando rastros corruptos del vendor de PBRP antes de sincronizar..."
+        rm -rf vendor/pb
+        
         echo "Descargando código fuente..."
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --no-progress 2>&1 | tee sync.log
+        # Le quitamos el --no-progress y el | tee
+        # Le pusimos --verbose para que te liste en vivo qué repo está descargando
+        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --verbose
+        
         echo "✅ Código descargado correctamente."
 
     - name: 📂 Clonación Paralela (Device Tree + Vendors)
@@ -132,12 +138,11 @@ jobs:
         git clone https://github.com/TeamWin/android_vendor_omni.git -b android-8.1 vendor/omni &
         PID_OMNI=$!
         
-        # TAREA C: Vendor PBRP (Usando la rama correcta "pb" que descubrimos)
+        # TAREA C: Vendor PBRP (Usando la rama correcta "pb")
         rm -rf vendor/pb
         git clone https://github.com/PitchBlackTWRP/vendor_pb.git -b pb vendor/pb &
         PID_PB=$!
         
-        # Validamos que los 3 se descarguen bien o detenemos todo
         wait $PID_DT || exit 1
         wait $PID_OMNI || exit 1
         wait $PID_PB || exit 1
