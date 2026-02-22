@@ -93,6 +93,18 @@ jobs:
         echo "Iniciando Manifiesto..."
         repo init -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }} --depth=1
         
+        echo "🩹 Aplicando parche local para repositorios antiguos de OmniROM (Android 9.0)..."
+        mkdir -p .repo/local_manifests
+        cat <<EOF > .repo/local_manifests/fix_omni.xml
+        <?xml version="1.0" encoding="UTF-8"?>
+        <manifest>
+          <remove-project name="android_frameworks_base" />
+          <remove-project name="android_system_core" />
+          <project path="frameworks/base" name="omnirom/android_frameworks_base_old" remote="github" revision="android-9.0" />
+          <project path="system/core" name="omnirom/android_system_core_old" remote="github" revision="android-9.0" />
+        </manifest>
+        EOF
+        
         echo "Descargando código fuente..."
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --verbose
         
