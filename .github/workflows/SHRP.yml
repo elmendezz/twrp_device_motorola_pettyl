@@ -1,0 +1,209 @@
+name: Compilar SkyHawk Recovery Project (SHRP)
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_url:
+        description: 'URL del Manifiesto de SHRP'
+        required: true
+        default: 'https://github.com/skyhawk-recovery-project/manifest.git'
+      manifest_branch:
+        description: 'Rama del Manifiesto de SHRP (ej. shrp-8.1, shrp-9.0)'
+        required: true
+        default: 'shrp-8.1'
+      device_tree_url:
+        description: 'URL del Device Tree'
+        required: true
+        default: 'https://github.com/elmendezz/android_device_motorola_pettyl'
+      device_branch:
+        description: 'Rama del Device Tree (En blanco para main/master)'
+        required: false
+        default: 'android-8.1'
+      device_manufacturer:
+        description: 'Fabricante (ej. motorola, xiaomi)'
+        required: true
+        default: 'motorola'
+      device_codename:
+        description: 'Nombre clave del dispositivo (ej. pettyl)'
+        required: true
+        default: 'pettyl'
+      build_target:
+        description: 'Objetivo de compilación (mka recoveryimage)'
+        required: true
+        default: 'recoveryimage'
+
+permissions:
+  contents: write
+
+jobs:
+  SHRP-Compile:
+    runs-on: ubuntu-22.04 
+    
+    steps:
+    - name: 🧹 Limpiar espacio en disco
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: false
+        android: false
+
+    - name: ⚙️ Configurar Action y Java
+      uses: actions/checkout@v4
+    - uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '8'
+
+    - name: 🚀 Preparación Paralela (Dependencias)
+      run: |
+        set -e
+        trap 'echo "❌ ERROR: Falló la preparación en la línea $LINENO." >&2' ERR
+        
+        echo "Iniciando descarga de dependencias..."
+        
+        (sudo apt-get update -qq && sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2) &
+        PID_APT=$!
+        
+        (sudo curl -sL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo && sudo chmod a+rx /usr/local/bin/repo) &
+        PID_REPO=$!
+        
+        (mkdir -p $HOME/bin && ln -s /usr/bin/python2 $HOME/bin/python) &
+        PID_PY=$!
+        
+        wait $PID_APT || exit 1
+        wait $PID_REPO || exit 1
+        wait $PID_PY || exit 1
+        
+        echo "$HOME/bin" >> $GITHUB_PATH
+        echo "✅ Dependencias instaladas."
+
+    - name: ⚡ Configurar CCache
+      uses: hendrikmuhs/ccache-action@v1.2.14
+      with:
+        max-size: "10G"
+
+    - name: 🔄 Sincronizar Código Fuente (Repo Sync)
+      run: |
+        set -eo pipefail 
+        trap 'echo "❌ ERROR DE SINCRONIZACIÓN: Falló en la línea $LINENO." >&2' ERR
+        
+        mkdir -p ~/shrp && cd ~/shrp
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        
+        echo "Iniciando Manifiesto..."
+        repo init -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }} --depth=1
+        
+        echo "Aplicando parche local para OmniROM..."
+        mkdir -p .repo/local_manifests
+        cat <<EOF > .repo/local_manifests/fix_omni.xml
+        <?xml version="1.0" encoding="UTF-8"?>
+        <manifest>
+          <remove-project name="android_frameworks_base" />
+          <remove-project name="android_system_core" />
+          <project path="frameworks/base" name="omnirom/android_frameworks_base_old" remote="github" revision="android-8.1" />
+          <project path="system/core" name="omnirom/android_system_core_old" remote="github" revision="android-8.1" />
+        </manifest>
+        EOF
+        
+        echo "Descargando código fuente..."
+        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --verbose
+        
+        echo "✅ Código descargado correctamente."
+
+    - name: 📂 Clonación Paralela (Device Tree + Vendor)
+      run: |
+        set -e
+        trap 'echo "❌ ERROR CLONANDO REPOS: Falló en la línea $LINENO." >&2' ERR
+        
+        cd ~/shrp
+        export GIT_TERMINAL_PROMPT=0 
+        
+        echo "Clonando repositorios al mismo tiempo..."
+        
+        # TAREA A: Device Tree
+        if [ -n "${{ github.event.inputs.device_branch }}" ]; then
+          git clone -b ${{ github.event.inputs.device_branch }} ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }} &
+        else
+          git clone ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }} &
+        fi
+        PID_DT=$!
+        
+        # TAREA B: Vendor Omni
+        rm -rf vendor/omni
+        git clone https://github.com/TeamWin/android_vendor_omni.git -b android-8.1 vendor/omni &
+        PID_OMNI=$!
+        
+        wait $PID_DT || exit 1
+        wait $PID_OMNI || exit 1
+        
+        echo "✅ Árboles y Vendors listos."
+
+    - name: 🔨 Compilar SHRP (El Jefe Final)
+      run: |
+        set -e
+        trap 'echo "❌ ERROR DE COMPILACIÓN: El proceso de compilación falló en la línea $LINENO (código de salida $?). Revisa los logs de Make arriba para ver qué archivo causó el choque." >&2' ERR
+        
+        cd ~/shrp
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export USE_CCACHE=1
+        export CCACHE_EXEC=/usr/bin/ccache
+        
+        echo "🩹 Aplicando parche de emergencia en libhwbinder..."
+        sed -i '1s/^/#define NATIVE_HANDLE_MAX_FDS 1024\n#define NATIVE_HANDLE_MAX_INTS 1024\n/' system/libhwbinder/Parcel.cpp
+        
+        echo "Cargando entorno de compilación..."
+        source build/envsetup.sh
+        lunch omni_${{ github.event.inputs.device_codename }}-eng
+        
+        echo "🔥 Iniciando compilación de ${{ github.event.inputs.build_target }}..."
+        mka ${{ github.event.inputs.build_target }} -j$(nproc --all)
+        echo "✅ Compilación exitosa."
+
+    - name: 📦 Empaquetar Archivos
+      run: |
+        set -e
+        cd ~/shrp/out/target/product/${{ github.event.inputs.device_codename }}
+        mkdir -p ~/workspace/releases
+        
+        # Buscamos archivos ZIP que comiencen con SHRP
+        SHRP_ZIP=$(find . -maxdepth 1 -name "SHRP_*.zip" -type f | head -n 1)
+        if [ -n "$SHRP_ZIP" ]; then
+          cp "$SHRP_ZIP" ~/workspace/releases/
+          echo "✅ ZIP copiado con éxito."
+        else
+          echo "⚠️ ADVERTENCIA: No se generó archivo ZIP de SHRP."
+        fi
+        
+        if [ -f "recovery.img" ]; then
+          cp recovery.img ~/workspace/releases/SHRP-${{ github.event.inputs.device_codename }}-recovery.img
+          echo "✅ Imagen .img copiada con éxito."
+        fi
+
+    - name: ☁️ Subir Archivos a GitHub
+      uses: actions/upload-artifact@v4
+      with:
+        name: SHRP-${{ github.event.inputs.device_codename }}-Build
+        path: /home/runner/workspace/releases/*
+
+    - name: 🎉 Publicar Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: SHRP-${{ github.event.inputs.device_codename }}-${{ github.run_number }}
+        name: SkyHawk Recovery Project - ${{ github.event.inputs.device_codename }} (Build ${{ github.run_number }})
+        files: /home/runner/workspace/releases/*
+        body: |
+          ## 📍 Release Automatizado: SHRP
+          **Dispositivo:** ${{ github.event.inputs.device_manufacturer }} ${{ github.event.inputs.device_codename }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🚨 Reporte de Falla
+      if: failure()
+      run: |
+        echo "=========================================================="
+        echo "❌ LA COMPILACIÓN FALLÓ EN ALGÚN PUNTO ❌"
+        echo "=========================================================="
+        echo "Bro, algo salió mal. Sigue estos pasos para encontrar el error:"
+        echo "1. Desplázate hacia arriba en los logs de esta pantalla."
+        echo "2. Busca la flecha roja o el símbolo de error '❌'."
+        echo "=========================================================="
