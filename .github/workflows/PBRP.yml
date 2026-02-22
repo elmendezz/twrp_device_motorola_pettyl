@@ -108,7 +108,7 @@ jobs:
         
         echo "Descargando código fuente (Usando -j4 para estabilidad)..."
         # Usamos la sintaxis estable que descubriste
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags -v 2>&1
+        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --no-progress 2>&1 | tee sync.log
         echo "✅ Código descargado correctamente."
 
     - name: 📂 Clonación Paralela (Device Tree + Vendor Omni)
