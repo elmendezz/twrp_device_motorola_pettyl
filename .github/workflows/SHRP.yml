@@ -6,11 +6,11 @@ on:
       manifest_url:
         description: 'URL del Manifiesto de SHRP'
         required: true
-        default: 'https://github.com/skyhawk-recovery-project/manifest.git'
+        default: 'https://github.com/SHRP/manifest.git'
       manifest_branch:
-        description: 'Rama del Manifiesto de SHRP (ej. shrp-8.1, shrp-9.0)'
+        description: 'Rama del Manifiesto de SHRP'
         required: true
-        default: 'shrp-8.1'
+        default: 'v3_9.0'
       device_tree_url:
         description: 'URL del Device Tree'
         required: true
@@ -93,20 +93,8 @@ jobs:
         echo "Iniciando Manifiesto..."
         repo init -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }} --depth=1
         
-        echo "Aplicando parche local para OmniROM..."
-        mkdir -p .repo/local_manifests
-        cat <<EOF > .repo/local_manifests/fix_omni.xml
-        <?xml version="1.0" encoding="UTF-8"?>
-        <manifest>
-          <remove-project name="android_frameworks_base" />
-          <remove-project name="android_system_core" />
-          <project path="frameworks/base" name="omnirom/android_frameworks_base_old" remote="github" revision="android-8.1" />
-          <project path="system/core" name="omnirom/android_system_core_old" remote="github" revision="android-8.1" />
-        </manifest>
-        EOF
-        
         echo "Descargando código fuente..."
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --verbose
+        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --verbose
         
         echo "✅ Código descargado correctamente."
 
@@ -128,9 +116,9 @@ jobs:
         fi
         PID_DT=$!
         
-        # TAREA B: Vendor Omni
+        # TAREA B: Vendor Omni (Ajustado a Android 9.0 para SHRP v3)
         rm -rf vendor/omni
-        git clone https://github.com/TeamWin/android_vendor_omni.git -b android-8.1 vendor/omni &
+        git clone https://github.com/TeamWin/android_vendor_omni.git -b android-9.0 vendor/omni &
         PID_OMNI=$!
         
         wait $PID_DT || exit 1
@@ -149,7 +137,7 @@ jobs:
         export CCACHE_EXEC=/usr/bin/ccache
         
         echo "🩹 Aplicando parche de emergencia en libhwbinder..."
-        sed -i '1s/^/#define NATIVE_HANDLE_MAX_FDS 1024\n#define NATIVE_HANDLE_MAX_INTS 1024\n/' system/libhwbinder/Parcel.cpp
+        sed -i '1s/^/#define NATIVE_HANDLE_MAX_FDS 1024\n#define NATIVE_HANDLE_MAX_INTS 1024\n/' system/libhwbinder/Parcel.cpp || true
         
         echo "Cargando entorno de compilación..."
         source build/envsetup.sh
