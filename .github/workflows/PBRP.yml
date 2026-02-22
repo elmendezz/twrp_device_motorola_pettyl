@@ -67,9 +67,12 @@ jobs:
         PID_REPO=$!
         
         (mkdir -p $HOME/bin && ln -s /usr/bin/python2 $HOME/bin/python) &
+        PID_PY=$!
         
-        wait $PID_APT
-        wait $PID_REPO
+        wait $PID_APT || exit 1
+        wait $PID_REPO || exit 1
+        wait $PID_PY || exit 1
+        
         echo "$HOME/bin" >> $GITHUB_PATH
         echo "✅ Dependencias instaladas."
 
@@ -80,10 +83,10 @@ jobs:
 
     - name: 🔄 Sincronizar Código Fuente (Repo Sync)
       run: |
-        set -e
+        set -eo pipefail 
         trap 'echo "❌ ERROR DE SINCRONIZACIÓN: Falló en la línea $LINENO." >&2' ERR
         
-        mkdir ~/pbrp && cd ~/pbrp
+        mkdir -p ~/pbrp && cd ~/pbrp
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
@@ -103,7 +106,6 @@ jobs:
         EOF
         
         echo "Descargando código fuente..."
-        # Tu comando maestro implementado aquí:
         repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --no-progress 2>&1 | tee sync.log
         echo "✅ Código descargado correctamente."
 
@@ -115,25 +117,31 @@ jobs:
         cd ~/pbrp
         export GIT_TERMINAL_PROMPT=0 
         
-        echo "Clonando repositorios requeridos al mismo tiempo..."
+        echo "Clonando repositorios al mismo tiempo..."
         
-        # TAREA A: Clonar Device Tree
+        # TAREA A: Device Tree
         if [ -n "${{ github.event.inputs.device_branch }}" ]; then
           git clone -b ${{ github.event.inputs.device_branch }} ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }} &
         else
           git clone ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }} &
         fi
+        PID_DT=$!
         
-        # TAREA B: Asegurar Vendor Omni 
+        # TAREA B: Vendor Omni
         rm -rf vendor/omni
         git clone https://github.com/TeamWin/android_vendor_omni.git -b android-8.1 vendor/omni &
+        PID_OMNI=$!
         
-        # 🛠️ TAREA C (EL FIX DE SOONG): Forzar la clonación limpia del Vendor de PBRP
+        # TAREA C: Vendor PBRP (Usando la rama correcta "pb" que descubrimos)
         rm -rf vendor/pb
-        git clone https://github.com/PitchBlackTWRP/vendor_pb.git -b android-8.1 vendor/pb &
+        git clone https://github.com/PitchBlackTWRP/vendor_pb.git -b pb vendor/pb &
+        PID_PB=$!
         
-        # ESPERAR A QUE TERMINEN LAS 3 DESCARGAS
-        wait
+        # Validamos que los 3 se descarguen bien o detenemos todo
+        wait $PID_DT || exit 1
+        wait $PID_OMNI || exit 1
+        wait $PID_PB || exit 1
+        
         echo "✅ Árboles y Vendors listos."
 
     - name: 🔨 Compilar PBRP (El Jefe Final)
