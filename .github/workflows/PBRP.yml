@@ -40,145 +40,165 @@ jobs:
     runs-on: ubuntu-22.04 
     
     steps:
-    - name: Limpiar espacio en disco
+    - name: 🧹 Limpiar espacio en disco (Paso 1)
       uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: false
 
-    - name: Configurar entorno
+    - name: ⚙️ Configurar Action y Java
       uses: actions/checkout@v4
-
-    - name: Configurar Java 8
-      uses: actions/setup-java@v4
+    - uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '8'
 
-    - name: Instalar dependencias
+    - name: 🚀 Preparación Paralela (Dependencias + Herramientas)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
+        set -e
+        trap 'echo "❌ ERROR: Falló la preparación en la línea $LINENO. Revisa arriba el motivo exacto." >&2' ERR
         
-        # Enlace simbólico para Python 2 (necesario en árboles antiguos)
-        mkdir -p $HOME/bin
-        ln -s /usr/bin/python2 $HOME/bin/python
+        echo "Iniciando descarga de dependencias y herramientas al mismo tiempo..."
+        
+        # TAREA A: Actualizar e instalar paquetes de Ubuntu (en segundo plano)
+        (sudo apt-get update -qq && sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2) &
+        PID_APT=$!
+        
+        # TAREA B: Descargar binario de Repo de Google (en segundo plano)
+        (sudo curl -sL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo && sudo chmod a+rx /usr/local/bin/repo) &
+        PID_REPO=$!
+        
+        # TAREA C: Crear symlink de Python2 (en segundo plano)
+        (mkdir -p $HOME/bin && ln -s /usr/bin/python2 $HOME/bin/python) &
+        
+        # ESPERAR A QUE TODAS LAS TAREAS TERMINEN
+        wait $PID_APT
+        wait $PID_REPO
         echo "$HOME/bin" >> $GITHUB_PATH
+        echo "✅ Dependencias instaladas y herramientas listas."
 
-    - name: Configurar CCache (Acelera compilaciones futuras)
+    - name: ⚡ Configurar CCache
       uses: hendrikmuhs/ccache-action@v1.2.14
       with:
         max-size: "10G"
 
-    - name: Configurar repo y sincronizar PBRP
+    - name: 🔄 Sincronizar Código Fuente (Repo Sync)
       run: |
-        sudo curl -vL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
-        sudo chmod a+rx /usr/local/bin/repo
+        set -e
+        trap 'echo "❌ ERROR DE SINCRONIZACIÓN: Falló en la línea $LINENO. Es probable que GitHub haya cortado la conexión o falte un repositorio." >&2' ERR
         
-        mkdir ~/pbrp
-        cd ~/pbrp
-        
+        mkdir ~/pbrp && cd ~/pbrp
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        # Inicializamos el repositorio de PBRP
-        repo init -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }}
+        echo "Iniciando Manifiesto..."
+        repo init -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }} --depth=1
         
-        # 🛠️ PARCHE 1: Local Manifest para redirigir los repositorios caídos de OmniROM
-        echo "Aplicando parche para repositorios antiguos de OmniROM..."
+        echo "Aplicando parche local para OmniROM..."
         mkdir -p .repo/local_manifests
         cat <<EOF > .repo/local_manifests/fix_omni.xml
         <?xml version="1.0" encoding="UTF-8"?>
         <manifest>
           <remove-project name="android_frameworks_base" />
           <remove-project name="android_system_core" />
-          
           <project path="frameworks/base" name="omnirom/android_frameworks_base_old" remote="github" revision="android-8.1" />
           <project path="system/core" name="omnirom/android_system_core_old" remote="github" revision="android-8.1" />
         </manifest>
         EOF
         
-        # Sincronizamos (con toda la fuerza de los núcleos de GitHub Actions)
+        echo "Descargando código fuente (Usando -j4 para estabilidad)..."
+        # Usamos la sintaxis estable que descubriste
         repo sync -c -j4 --force-sync --no-clone-bundle --no-tags -v 2>&1
+        echo "✅ Código descargado correctamente."
 
-    - name: Clonar Árbol del Dispositivo
+    - name: 📂 Clonación Paralela (Device Tree + Vendor Omni)
       run: |
+        set -e
+        trap 'echo "❌ ERROR CLONANDO REPOS: Falló en la línea $LINENO. Verifica que los links del Device Tree o Vendor existan y sean públicos." >&2' ERR
+        
         cd ~/pbrp
+        export GIT_TERMINAL_PROMPT=0 # Evita que se congele pidiendo contraseñas
+        
+        echo "Clonando Device Tree y Vendor al mismo tiempo..."
+        
+        # TAREA A: Clonar Device Tree (en segundo plano)
         if [ -n "${{ github.event.inputs.device_branch }}" ]; then
-          git clone -b ${{ github.event.inputs.device_branch }} ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }}
+          git clone -b ${{ github.event.inputs.device_branch }} ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }} &
         else
-          git clone ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }}
+          git clone ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }} &
         fi
+        
+        # TAREA B: Clonar Vendor Omni desde TeamWin (en segundo plano)
+        git clone https://github.com/TeamWin/android_vendor_omni.git -b android-8.1 vendor/omni &
+        
+        # ESPERAR A QUE TERMINEN AMBOS
+        wait
+        echo "✅ Árboles de dispositivo listos."
 
-    - name: Parchear Vendor Omni (Dependencia Faltante)
+    - name: 🔨 Compilar PBRP (El Jefe Final)
       run: |
-        cd ~/pbrp
-        # 🛠️ PARCHE 2: Clonar vendor/omni si el manifiesto no lo descargó
-        if [ ! -f "vendor/omni/config/common.mk" ]; then
-          echo "vendor/omni no encontrado. Clonando dependencias..."
-          rm -rf vendor/omni
-          git clone https://github.com/minimal-manifest-twrp/platform_vendor_twrp.git -b twrp-8.1 vendor/omni
-        else
-          echo "El vendor/omni ya existe. Todo en orden."
-        fi
-
-    - name: Compilar PBRP
-      run: |
+        set -e
+        trap 'echo "❌ ERROR DE COMPILACIÓN: El proceso de compilación falló en la línea $LINENO (código de salida $?). Revisa los logs de Make arriba para ver qué archivo del Device Tree causó el choque." >&2' ERR
+        
         cd ~/pbrp
         export ALLOW_MISSING_DEPENDENCIES=true
         export USE_CCACHE=1
         export CCACHE_EXEC=/usr/bin/ccache
         
+        echo "Cargando entorno de compilación..."
         source build/envsetup.sh
         lunch omni_${{ github.event.inputs.device_codename }}-eng
+        
+        echo "🔥 Iniciando compilación de ${{ github.event.inputs.build_target }}..."
         mka ${{ github.event.inputs.build_target }} -j$(nproc --all)
+        echo "✅ Compilación exitosa."
 
-    - name: Empaquetar y Preparar Archivos para Subir
+    - name: 📦 Empaquetar Archivos
       run: |
+        set -e
         cd ~/pbrp/out/target/product/${{ github.event.inputs.device_codename }}
         mkdir -p ~/workspace/releases
         
-        # Buscar el ZIP de PBRP (si existe) y moverlo
         PBRP_ZIP=$(find . -maxdepth 1 -name "PBRP-*.zip" -type f | head -n 1)
         if [ -n "$PBRP_ZIP" ]; then
           cp "$PBRP_ZIP" ~/workspace/releases/
-          echo "ZIP encontrado: $PBRP_ZIP"
+          echo "✅ ZIP copiado con éxito."
         else
-          echo "No se generó archivo ZIP."
+          echo "⚠️ ADVERTENCIA: No se generó archivo ZIP."
         fi
         
-        # Copiar y renombrar el recovery.img base
         if [ -f "recovery.img" ]; then
           cp recovery.img ~/workspace/releases/PBRP-${{ github.event.inputs.device_codename }}-recovery.img
+          echo "✅ Imagen .img copiada con éxito."
         fi
 
-    - name: Subir Archivos como Artefactos de GitHub Actions
+    - name: ☁️ Subir Archivos a GitHub
       uses: actions/upload-artifact@v4
       with:
         name: PBRP-${{ github.event.inputs.device_codename }}-Build
         path: /home/runner/workspace/releases/*
 
-    - name: Publicar Release Bilingüe
+    - name: 🎉 Publicar Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: PBRP-${{ github.event.inputs.device_codename }}-${{ github.run_number }}
         name: PitchBlack Recovery Project - ${{ github.event.inputs.device_codename }} (Build ${{ github.run_number }})
         files: /home/runner/workspace/releases/*
         body: |
-          ## 📍 Release: PitchBlack Recovery Project (PBRP)
-          **Dispositivo / Device:** ${{ github.event.inputs.device_manufacturer }} ${{ github.event.inputs.device_codename }}
-          
-          ### 📝 Notas de la versión / Release Notes:
-          - **ES:** Compilación automatizada de PBRP. Incluye archivo flasheable `.zip` (recomendado) y archivo de imagen `.img`.
-          - **EN:** Automated PBRP build. Includes flashable `.zip` (recommended) and `.img` image file.
-          
-          ### 🚀 Instalación / Installation:
-          1. **ES:** Inicia en modo Fastboot. / **EN:** Boot into Fastboot mode.
-          2. **ES:** Flashea temporalmente la imagen: `fastboot boot PBRP-*-recovery.img` / **EN:** Temporarily boot the image: `fastboot boot PBRP-*-recovery.img`.
-          3. **ES:** Una vez dentro de PBRP, ve a Install, selecciona el archivo `.zip` de PBRP y desliza para instalar de forma permanente. / **EN:** Once in PBRP, go to Install, select the PBRP `.zip` file, and swipe to permanently install.
-          
-          ### 🔌 La Regla de Oro / The Golden Rule:
-          - **ES:** Usa un cable USB de buena calidad. La mayoría de los errores de fastboot/adb ocurren por cables defectuosos.
-          - **EN:** Use a high-quality USB cable. Most fastboot/adb errors happen because of faulty cables.
+          ## 📍 Release Automatizado: PBRP
+          **Dispositivo:** ${{ github.event.inputs.device_manufacturer }} ${{ github.event.inputs.device_codename }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🚨 Reporte de Falla (Solo si algo sale mal)
+      if: failure()
+      run: |
+        echo "=========================================================="
+        echo "❌ LA COMPILACIÓN FALLÓ EN ALGÚN PUNTO ❌"
+        echo "=========================================================="
+        echo "Bro, algo salió mal. Sigue estos pasos para encontrar el error:"
+        echo "1. Desplázate hacia arriba en los logs de esta pantalla."
+        echo "2. Busca la flecha roja o el símbolo de error '❌'."
+        echo "3. Ahí verás exactamente qué línea de código reventó y el motivo."
+        echo "Si fue en la etapa de 'Compilar PBRP', el error está en el Device Tree (falta una variable o dependencia en tus archivos .mk)."
+        echo "=========================================================="
