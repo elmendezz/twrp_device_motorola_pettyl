@@ -81,10 +81,24 @@ jobs:
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         
-        # ⚠️ Quitamos --depth=1 de la inicialización para evitar el error de ref en repos antiguos
+        # Inicializamos el repositorio de PBRP
         repo init -u ${{ github.event.inputs.manifest_url }} -b ${{ github.event.inputs.manifest_branch }}
         
-        # Sincronizamos (dejamos --force-sync por seguridad)
+        # 🛠️ EL FIX: Local Manifest para redirigir los repositorios caídos de OmniROM
+        echo "Aplicando parche para repositorios antiguos de OmniROM..."
+        mkdir -p .repo/local_manifests
+        cat <<EOF > .repo/local_manifests/fix_omni.xml
+        <?xml version="1.0" encoding="UTF-8"?>
+        <manifest>
+          <remove-project name="android_frameworks_base" />
+          <remove-project name="android_system_core" />
+          
+          <project path="frameworks/base" name="omnirom/android_frameworks_base_old" remote="github" revision="android-8.1" />
+          <project path="system/core" name="omnirom/android_system_core_old" remote="github" revision="android-8.1" />
+        </manifest>
+        EOF
+        
+        # Sincronizamos (con toda la fuerza de los núcleos de GitHub Actions)
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --verbose
 
     - name: Clonar Árbol del Dispositivo
