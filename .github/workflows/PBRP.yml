@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-22.04 
     
     steps:
-    - name: 🧹 Limpiar espacio en disco (Paso 1)
+    - name: 🧹 Limpiar espacio en disco
       uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
@@ -53,29 +53,25 @@ jobs:
         distribution: 'temurin'
         java-version: '8'
 
-    - name: 🚀 Preparación Paralela (Dependencias + Herramientas)
+    - name: 🚀 Preparación Paralela (Dependencias)
       run: |
         set -e
-        trap 'echo "❌ ERROR: Falló la preparación en la línea $LINENO. Revisa arriba el motivo exacto." >&2' ERR
+        trap 'echo "❌ ERROR: Falló la preparación en la línea $LINENO." >&2' ERR
         
-        echo "Iniciando descarga de dependencias y herramientas al mismo tiempo..."
+        echo "Iniciando descarga de dependencias..."
         
-        # TAREA A: Actualizar e instalar paquetes de Ubuntu (en segundo plano)
         (sudo apt-get update -qq && sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2) &
         PID_APT=$!
         
-        # TAREA B: Descargar binario de Repo de Google (en segundo plano)
         (sudo curl -sL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo && sudo chmod a+rx /usr/local/bin/repo) &
         PID_REPO=$!
         
-        # TAREA C: Crear symlink de Python2 (en segundo plano)
         (mkdir -p $HOME/bin && ln -s /usr/bin/python2 $HOME/bin/python) &
         
-        # ESPERAR A QUE TODAS LAS TAREAS TERMINEN
         wait $PID_APT
         wait $PID_REPO
         echo "$HOME/bin" >> $GITHUB_PATH
-        echo "✅ Dependencias instaladas y herramientas listas."
+        echo "✅ Dependencias instaladas."
 
     - name: ⚡ Configurar CCache
       uses: hendrikmuhs/ccache-action@v1.2.14
@@ -85,7 +81,7 @@ jobs:
     - name: 🔄 Sincronizar Código Fuente (Repo Sync)
       run: |
         set -e
-        trap 'echo "❌ ERROR DE SINCRONIZACIÓN: Falló en la línea $LINENO. Es probable que GitHub haya cortado la conexión o falte un repositorio." >&2' ERR
+        trap 'echo "❌ ERROR DE SINCRONIZACIÓN: Falló en la línea $LINENO." >&2' ERR
         
         mkdir ~/pbrp && cd ~/pbrp
         git config --global user.name "GitHub Action"
@@ -106,39 +102,44 @@ jobs:
         </manifest>
         EOF
         
-        echo "Descargando código fuente (Usando -j4 para estabilidad)..."
-        # Usamos la sintaxis estable que descubriste
+        echo "Descargando código fuente..."
+        # Tu comando maestro implementado aquí:
         repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --no-progress 2>&1 | tee sync.log
         echo "✅ Código descargado correctamente."
 
-    - name: 📂 Clonación Paralela (Device Tree + Vendor Omni)
+    - name: 📂 Clonación Paralela (Device Tree + Vendors)
       run: |
         set -e
-        trap 'echo "❌ ERROR CLONANDO REPOS: Falló en la línea $LINENO. Verifica que los links del Device Tree o Vendor existan y sean públicos." >&2' ERR
+        trap 'echo "❌ ERROR CLONANDO REPOS: Falló en la línea $LINENO." >&2' ERR
         
         cd ~/pbrp
-        export GIT_TERMINAL_PROMPT=0 # Evita que se congele pidiendo contraseñas
+        export GIT_TERMINAL_PROMPT=0 
         
-        echo "Clonando Device Tree y Vendor al mismo tiempo..."
+        echo "Clonando repositorios requeridos al mismo tiempo..."
         
-        # TAREA A: Clonar Device Tree (en segundo plano)
+        # TAREA A: Clonar Device Tree
         if [ -n "${{ github.event.inputs.device_branch }}" ]; then
           git clone -b ${{ github.event.inputs.device_branch }} ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }} &
         else
           git clone ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }} &
         fi
         
-        # TAREA B: Clonar Vendor Omni desde TeamWin (en segundo plano)
+        # TAREA B: Asegurar Vendor Omni 
+        rm -rf vendor/omni
         git clone https://github.com/TeamWin/android_vendor_omni.git -b android-8.1 vendor/omni &
         
-        # ESPERAR A QUE TERMINEN AMBOS
+        # 🛠️ TAREA C (EL FIX DE SOONG): Forzar la clonación limpia del Vendor de PBRP
+        rm -rf vendor/pb
+        git clone https://github.com/PitchBlackTWRP/vendor_pb.git -b android-8.1 vendor/pb &
+        
+        # ESPERAR A QUE TERMINEN LAS 3 DESCARGAS
         wait
-        echo "✅ Árboles de dispositivo listos."
+        echo "✅ Árboles y Vendors listos."
 
     - name: 🔨 Compilar PBRP (El Jefe Final)
       run: |
         set -e
-        trap 'echo "❌ ERROR DE COMPILACIÓN: El proceso de compilación falló en la línea $LINENO (código de salida $?). Revisa los logs de Make arriba para ver qué archivo del Device Tree causó el choque." >&2' ERR
+        trap 'echo "❌ ERROR DE COMPILACIÓN: El proceso de compilación falló en la línea $LINENO (código de salida $?). Revisa los logs de Make arriba para ver qué archivo causó el choque." >&2' ERR
         
         cd ~/pbrp
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -190,7 +191,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: 🚨 Reporte de Falla (Solo si algo sale mal)
+    - name: 🚨 Reporte de Falla
       if: failure()
       run: |
         echo "=========================================================="
@@ -199,6 +200,4 @@ jobs:
         echo "Bro, algo salió mal. Sigue estos pasos para encontrar el error:"
         echo "1. Desplázate hacia arriba en los logs de esta pantalla."
         echo "2. Busca la flecha roja o el símbolo de error '❌'."
-        echo "3. Ahí verás exactamente qué línea de código reventó y el motivo."
-        echo "Si fue en la etapa de 'Compilar PBRP', el error está en el Device Tree (falta una variable o dependencia en tus archivos .mk)."
         echo "=========================================================="
