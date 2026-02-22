@@ -109,8 +109,6 @@ jobs:
         rm -rf vendor/pb
         
         echo "Descargando código fuente..."
-        # Le quitamos el --no-progress y el | tee
-        # Le pusimos --verbose para que te liste en vivo qué repo está descargando
         repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --verbose
         
         echo "✅ Código descargado correctamente."
@@ -138,7 +136,7 @@ jobs:
         git clone https://github.com/TeamWin/android_vendor_omni.git -b android-8.1 vendor/omni &
         PID_OMNI=$!
         
-        # TAREA C: Vendor PBRP (Usando la rama correcta "pb")
+        # TAREA C: Vendor PBRP
         rm -rf vendor/pb
         git clone https://github.com/PitchBlackTWRP/vendor_pb.git -b pb vendor/pb &
         PID_PB=$!
@@ -158,6 +156,9 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         export USE_CCACHE=1
         export CCACHE_EXEC=/usr/bin/ccache
+        
+        echo "🩹 Aplicando parche de emergencia en libhwbinder..."
+        sed -i '1s/^/#define NATIVE_HANDLE_MAX_FDS 1024\n#define NATIVE_HANDLE_MAX_INTS 1024\n/' system/libhwbinder/Parcel.cpp
         
         echo "Cargando entorno de compilación..."
         source build/envsetup.sh
