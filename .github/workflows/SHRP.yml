@@ -161,6 +161,9 @@ jobs:
         source build/envsetup.sh
         lunch omni_${{ github.event.inputs.device_codename }}-eng
         
+        echo "🩹 Engañando a Ninja: Creando carpeta fantasma para headers del Kernel..."
+        mkdir -p out/target/product/${{ github.event.inputs.device_codename }}/obj/KERNEL_OBJ/usr
+        
         echo "🔥 Iniciando compilación de ${{ github.event.inputs.build_target }}..."
         mka ${{ github.event.inputs.build_target }} -j$(nproc --all)
         echo "✅ Compilación exitosa."
