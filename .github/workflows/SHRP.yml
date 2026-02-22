@@ -162,7 +162,10 @@ jobs:
         lunch omni_${{ github.event.inputs.device_codename }}-eng
         
         echo "🩹 Engañando a Ninja: Creando carpeta fantasma para headers del Kernel..."
-        mkdir -p out/target/product/${{ github.event.inputs.device_codename }}/obj/KERNEL_OBJ/usr
+        mkdir -p out/target/product/${{ github.event.inputs.device_codename }}/obj/KERNEL_OBJ/usr/include/linux
+        
+        echo "🩹 Descargando archivo qseecom.h faltante para Qualcomm..."
+        curl -sL https://raw.githubusercontent.com/LineageOS/android_kernel_motorola_msm8953/lineage-15.1/include/uapi/linux/qseecom.h -o out/target/product/${{ github.event.inputs.device_codename }}/obj/KERNEL_OBJ/usr/include/linux/qseecom.h
         
         echo "🩹 Forzando a libcryptfs_hw a compilarse como módulo Vendor (Treble fix)..."
         sed -i 's/include $(BUILD_SHARED_LIBRARY)/LOCAL_VENDOR_MODULE := true\ninclude $(BUILD_SHARED_LIBRARY)/g' vendor/qcom/opensource/cryptfs_hw/Android.mk || true
