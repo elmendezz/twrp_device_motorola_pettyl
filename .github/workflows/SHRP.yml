@@ -110,7 +110,7 @@ jobs:
         
         echo "✅ Código descargado correctamente."
 
-    - name: 📂 Clonación Paralela (Device Tree + Vendor)
+    - name: 📂 Clonación Paralela (Device Tree + Vendor + Cifrado)
       run: |
         set -e
         trap 'echo "❌ ERROR CLONANDO REPOS: Falló en la línea $LINENO." >&2' ERR
@@ -133,15 +133,21 @@ jobs:
         git clone https://github.com/TeamWin/android_vendor_omni.git -b android-9.0 vendor/omni &
         PID_OMNI=$!
         
+        # TAREA C: Dependencia de Cifrado Qualcomm (libcryptfs_hw)
+        mkdir -p vendor/qcom/opensource
+        git clone https://github.com/TeamWin/android_vendor_qcom_opensource_cryptfs_hw.git -b android-9.0 vendor/qcom/opensource/cryptfs_hw &
+        PID_CRYPT=$!
+        
         wait $PID_DT || exit 1
         wait $PID_OMNI || exit 1
+        wait $PID_CRYPT || exit 1
         
-        echo "✅ Árboles y Vendors listos."
+        echo "✅ Árboles, Vendors y Dependencias listos."
 
     - name: 🔨 Compilar SHRP (El Jefe Final)
       run: |
         set -e
-        trap 'echo "❌ ERROR DE COMPILACIÓN: El proceso de compilación falló en la línea $LINENO (código de salida $?). Revisa los logs de Make arriba para ver qué archivo causó el choque." >&2' ERR
+        trap 'echo "❌ ERROR DE COMPILACIÓN: El proceso falló. Revisa los logs arriba." >&2' ERR
         
         cd ~/shrp
         export ALLOW_MISSING_DEPENDENCIES=true
@@ -203,7 +209,5 @@ jobs:
         echo "=========================================================="
         echo "❌ LA COMPILACIÓN FALLÓ EN ALGÚN PUNTO ❌"
         echo "=========================================================="
-        echo "Bro, algo salió mal. Sigue estos pasos para encontrar el error:"
-        echo "1. Desplázate hacia arriba en los logs de esta pantalla."
-        echo "2. Busca la flecha roja o el símbolo de error '❌'."
+        echo "Desplázate hacia arriba en los logs para encontrar el error."
         echo "=========================================================="
