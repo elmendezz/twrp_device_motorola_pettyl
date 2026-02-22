@@ -110,6 +110,22 @@ jobs:
           git clone ${{ github.event.inputs.device_tree_url }} device/${{ github.event.inputs.device_manufacturer }}/${{ github.event.inputs.device_codename }}
         fi
 
+	    - name: Parchear Vendor Omni (Dependencia Faltante)
+      run: |
+        cd ~/pbrp
+        # Si el archivo common.mk no existe, clonamos la carpeta a la fuerza
+        if [ ! -f "vendor/omni/config/common.mk" ]; then
+          echo "vendor/omni no encontrado. Clonando a la fuerza..."
+          rm -rf vendor/omni
+          
+          # Plan A: Intentar con el archivo viejo de OmniROM
+          # Plan B (||): Si falla, usar el de TWRP Minimal (100% compatible y estable)
+          git clone https://github.com/omnirom/android_vendor_omni_old.git -b android-8.1 vendor/omni || \
+          git clone https://github.com/minimal-manifest-twrp/platform_vendor_twrp.git -b twrp-8.1 vendor/omni
+        else
+          echo "El vendor/omni ya existe. Todo en orden."
+        fi
+        
     - name: Compilar PBRP
       run: |
         cd ~/pbrp
