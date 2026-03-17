@@ -1,0 +1,179 @@
+name: Compilar OrangeFox 12.1 Para Pettyl
+run-name: elmendezz-fox12.1_${{ github.run_number }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      fox_sync_url:
+        description: 'OrangeFox: URL del repositorio de Sincronización'
+        required: true
+        default: 'https://gitlab.com/OrangeFox/sync.git'
+      fox_manifest_branch:
+        description: 'OrangeFox: Rama del Manifiesto'
+        required: true
+        default: '12.1'
+      fox_device_tree_url:
+        description: 'OrangeFox: URL del Device Tree'
+        required: true
+        default: 'https://github.com/elmendezz/android_device_motorola_pettyl'
+      fox_device_branch:
+        description: 'OrangeFox: Rama del Device Tree'
+        required: false
+        default: 'android-12.1'
+      makefile_name:
+        description: 'Nombre del makefile para lunch (ej. twrp_pettyl-eng o omni_pettyl-eng)'
+        required: true
+        default: 'twrp_pettyl-eng'
+
+permissions:
+  contents: write
+
+jobs:
+  OrangeFox-Recovery-Compile:
+    runs-on: ubuntu-22.04
+    
+    steps:
+    - name: Limpiar espacio en disco
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: false
+        android: false
+
+    - name: Descargar el repositorio principal
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0 
+
+    - name: Calcular Versión OrangeFox
+      id: fox_version_calc
+      run: |
+        # Ahora leemos la Línea 1 de versiones.txt
+        BUILD_NUM=$(sed -n '1p' versiones.txt | tr -d '\r' | tr -d ' ')
+        
+        if ! [[ "$BUILD_NUM" =~ ^[0-9]+$ ]]; then
+          echo "Aviso: Línea 1 vacía o corrupta. Forzando a 0."
+          BUILD_NUM=0
+        fi
+        
+        NEW_BUILD_NUM=$((BUILD_NUM + 1))
+        VERSION="R11.1-12.1-elmendezz_build$NEW_BUILD_NUM"
+        
+        echo "NEW_BUILD_NUM=$NEW_BUILD_NUM" >> $GITHUB_ENV
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "¡Versión OrangeFox calculada como: $VERSION!"
+
+    - name: Configurar Java 11 (Requerido para Android 12.1)
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+
+    - name: Instalar Dependencias (Python 3)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5-dev x11proto-core-dev libx11-dev libgl1-mesa-dev g++-multilib libxml2-utils xsltproc unzip git ccache python3 python-is-python3 libssl-dev rsync
+
+    - name: Configurar Repo Tool
+      run: |
+        curl -sL https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
+        chmod a+x ~/repo
+        sudo mv ~/repo /usr/local/bin/repo
+
+    - name: Sincronizar Fuentes de OrangeFox 12.1
+      run: |
+        mkdir -p ~/OrangeFox_sync
+        cd ~/OrangeFox_sync
+        git clone ${{ github.event.inputs.fox_sync_url }}
+        
+        cd sync
+        chmod +x orangefox_sync.sh
+        # Usamos el script estándar para ramas >= 11.0
+        ./orangefox_sync.sh --branch ${{ github.event.inputs.fox_manifest_branch }} --path $HOME/fox_12.1
+        
+    - name: Clonar Árbol del Dispositivo
+      run: |
+        cd $HOME/fox_12.1
+        if [ -n "${{ github.event.inputs.fox_device_branch }}" ]; then
+          git clone -b ${{ github.event.inputs.fox_device_branch }} ${{ github.event.inputs.fox_device_tree_url }} device/motorola/pettyl
+        else
+          git clone ${{ github.event.inputs.fox_device_tree_url }} device/motorola/pettyl
+        fi
+
+    - name: Compilar Recovery OrangeFox
+      run: |
+        cd $HOME/fox_12.1
+        
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export LC_ALL="C"
+        
+        source build/envsetup.sh
+        lunch ${{ github.event.inputs.makefile_name }}
+        make clean
+        
+        # Para 12.1 es común requerir compilar la imagen boot o recovery según como esté estructurado el árbol.
+        mka recoveryimage FOX_VERSION="${{ env.VERSION }}" OF_MAINTAINER="elmendezz" -j$(nproc --all)
+
+    - name: Subir como Artifact de GitHub
+      uses: actions/upload-artifact@v4
+      with:
+        name: OrangeFox-${{ env.VERSION }}-pettyl
+        path: |
+          /home/runner/fox_12.1/out/target/product/pettyl/OrangeFox-*-pettyl.img
+          /home/runner/fox_12.1/out/target/product/pettyl/OrangeFox-*-pettyl.zip
+
+    - name: Publicar Pre-Release Bilingüe
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: OrangeFox-${{ env.VERSION }}-pettyl
+        name: OrangeFox ${{ env.VERSION }} - Pettyl (Pre-Release)
+        prerelease: true # <--- ESTO CONVIERTE EL RELEASE EN PRE-RELEASE
+        files: |
+          /home/runner/fox_12.1/out/target/product/pettyl/OrangeFox-*-pettyl.img
+          /home/runner/fox_12.1/out/target/product/pettyl/OrangeFox-*-pettyl.zip
+        body: |
+          ## 📍 Pre-Release: OrangeFox 12.1 Pettyl
+          **Build:** `${{ env.VERSION }}`
+          **Estado / Status:** 🚧 Testing / Pre-release
+          
+          ### 📝 Notas de la versión / Release Notes:
+          - **ES:** Compilado con las fuentes de OrangeFox 12.1 para Pettyl.
+          - **EN:** Compiled with OrangeFox 12.1 sources for Pettyl.
+          
+          ### 🚀 Instalación rápida / Quick Install:
+          1. **ES:** Pon el móvil en modo **Fastboot** (Vol- + Power). / **EN:** Boot device into **Fastboot** mode (Vol- + Power).
+          2. **PRUEBA / TEST:** `fastboot boot OrangeFox-${{ env.VERSION }}-pettyl.img`
+          3. **INSTALA / INSTALL:** `fastboot flash recovery OrangeFox-${{ env.VERSION }}-pettyl.img`
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Actualizar y pushear versiones.txt
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        
+        SUCCESS=false
+        for i in {1..5}; do
+          git fetch origin
+          git reset --hard origin/${GITHUB_REF##*/}
+          
+          # Actualizamos la LÍNEA 1 con el nuevo build
+          sed -i "1s/.*/${{ env.NEW_BUILD_NUM }}/" versiones.txt
+          
+          git add versiones.txt
+          git commit -m "OrangeFox 12.1: Update build number to ${{ env.NEW_BUILD_NUM }}" || true
+          
+          if git push origin HEAD; then
+            SUCCESS=true
+            break
+          else
+            delay=$((RANDOM % 9 + 2))
+            echo "Choque detectado. Reintentando en $delay seg... (Intento $i)"
+            sleep $delay
+          fi
+        done
+        
+        if [ "$SUCCESS" != "true" ]; then 
+          echo "Advertencia: El Release fue un éxito, pero no se pudo actualizar versiones.txt en el repositorio."
+          exit 1
+        fi
