@@ -104,9 +104,17 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL="C"
         
+        # 1. Apagamos el fail-on-error estricto de GitHub
+        set +e
         source build/envsetup.sh
+        
+        # 2. Lo volvemos a encender por seguridad
+        set -e
+        
+        # 3. Configurar el dispositivo
         lunch ${{ github.event.inputs.makefile_name }}
         
+        # 4. Compilar
         make clean
         mka recoveryimage FOX_VERSION="${{ env.VERSION }}" OF_MAINTAINER="elmendezz" -j$(nproc --all)
 
