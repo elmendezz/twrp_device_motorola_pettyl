@@ -19,7 +19,7 @@ on:
       fox_device_branch:
         description: 'OrangeFox: Rama del Device Tree'
         required: false
-        default: 'fox-12.1'
+        default: 'fox_12.1'
       makefile_name:
         description: 'Nombre del makefile para lunch (ej. twrp_pettyl-eng o omni_pettyl-eng)'
         required: true
