@@ -104,6 +104,34 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL="C"
         
+        # --- EXTRACCIÓN AUTOMÁTICA DE VARIABLES DE OrangeFox.mk ---
+        # Define la ruta de tu archivo mk
+        ORANGEFOX_MK="device/motorola/pettyl/OrangeFox.mk"
+        
+        if [ -f "$ORANGEFOX_MK" ]; then
+          echo "🔍 Extrayendo variables de $ORANGEFOX_MK..."
+          
+          # 1. Ignoramos líneas comentadas enteras (^#)
+          # 2. Buscamos líneas que tengan un signo igual (= o :=)
+          # 3. Usamos awk para limpiar espacios, remover comentarios en línea y formatear como 'export KEY="VALUE"'
+          grep -v '^\s*#' "$ORANGEFOX_MK" | grep '=' | awk -F ':?=' '{
+            sub(/#.*/, "", $2); # Elimina comentarios al final de la línea si los hay
+            gsub(/^[ \t]+|[ \t]+$/, "", $1); # Limpia espacios de la variable
+            gsub(/^[ \t]+|[ \t]+$/, "", $2); # Limpia espacios del valor
+            print "export " $1 "=\"" $2 "\""
+          }' > export_fox_vars.sh
+          
+          echo "--- 📋 Variables detectadas y exportadas ---"
+          cat export_fox_vars.sh
+          
+          # Ejecutamos el script generado para aplicar los export al entorno actual
+          source export_fox_vars.sh
+          echo "--------------------------------------------"
+        else
+          echo "⚠️ Advertencia: No se encontró el archivo $ORANGEFOX_MK. Continuando sin variables extraídas."
+        fi
+        # ----------------------------------------------------------
+        
         # 1. Apagamos el fail-on-error estricto de GitHub
         set +e
         source build/envsetup.sh
@@ -141,8 +169,8 @@ jobs:
           **Estado / Status:** 🚧 Testing / Pre-release
           
           ### 📝 Notas de la versión / Release Notes:
-          - **ES:** Compilado con las fuentes de OrangeFox 12.1 para Pettyl. Variables de versión nativas aplicadas desde el device tree.
-          - **EN:** Compiled with OrangeFox 12.1 sources for Pettyl. Native version variables applied from device tree.
+          - **ES:** Compilado con las fuentes de OrangeFox 12.1 para Pettyl. Variables de versión nativas extraídas y aplicadas automáticamente desde el device tree.
+          - **EN:** Compiled with OrangeFox 12.1 sources for Pettyl. Native version variables automatically extracted and applied from device tree.
           
           ### 🚀 Instalación rápida / Quick Install:
           1. **ES:** Pon el móvil en modo **Fastboot** (Vol- + Power). / **EN:** Boot device into **Fastboot** mode (Vol- + Power).
